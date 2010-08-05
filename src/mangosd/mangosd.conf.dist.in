@@ -1,4 +1,4 @@
-#####################################
+﻿#####################################
 # MaNGOS Configuration file         #
 #####################################
 
@@ -324,6 +324,11 @@ CleanCharacterDB = 1
 #        Default: "Ra.log"
 #                 "" - Empty name for disable
 #
+#    ArenaRatedLogFile
+#        Log of arena matches
+#        Default: "Arena.log"
+#                 "" - Empty name for disable
+#
 #    LogColors
 #        Color for messages (format "normal_color details_color debug_color error_color")
 #        Colors: 0 - BLACK, 1 - RED, 2 - GREEN,  3 - BROWN, 4 - BLUE, 5 - MAGENTA, 6 -  CYAN, 7 - GREY,
@@ -364,6 +369,7 @@ GmLogFile = ""
 GmLogTimestamp = 0
 GmLogPerAccount = 0
 RaLogFile = ""
+ArenaRatedLogFile = "Arena.log"
 LogColors = ""
 
 ###################################################################################################################
@@ -1129,6 +1135,10 @@ Visibility.Distance.InFlight      = 100
 Visibility.Distance.Grey.Unit   = 1
 Visibility.Distance.Grey.Object = 10
 
+Visibility.Notify.Period.OnContinents = 1000
+Visibility.Notify.Period.InInstances  = 1000
+Visibility.Notify.Period.InBGArenas   = 1000
+
 ###################################################################################################################
 # SERVER RATES
 #
@@ -1410,6 +1420,7 @@ BattleGround.PremadeGroupWaitForMatch = 1800000
 #        Default: 1 (active)
 #                 0 (finished)
 #
+<<<<<<< HEAD:src/mangosd/mangosd.conf.dist.in
 #    Arena.StartRating
 #        Default Rating at team creation
 #        Default: -1 (use season dependent default value)
@@ -1417,6 +1428,17 @@ BattleGround.PremadeGroupWaitForMatch = 1800000
 #    Arena.StartPersonalRating
 #        Default Personal Rating at team creation
 #        Default: -1 (use season dependent default value)
+=======
+#    Arena.LoserNoChange
+#        If winner or loser rating is below this limit, loser loses no rating
+#        Default: 0 (disable)
+#                 1400
+#
+#    Arena.LoserHalfChange
+#        If loser rating is below this limit, he loses half of rating
+#        Default: 0 (disable)
+#                 1500
+>>>>>>> vehicule:src/mangosd/mangosd.conf.dist.in
 #
 ###################################################################################################################
 
@@ -1428,8 +1450,13 @@ Arena.QueueAnnouncer.Join = 0
 Arena.QueueAnnouncer.Exit = 0
 Arena.ArenaSeason.ID = 1
 Arena.ArenaSeason.InProgress = 1
+<<<<<<< HEAD:src/mangosd/mangosd.conf.dist.in
 Arena.StartRating = -1
 Arena.StartPersonalRating = -1
+=======
+Arena.LoserNoChange = 0
+Arena.LoserHalfChange = 0
+>>>>>>> vehicule:src/mangosd/mangosd.conf.dist.in
 
 ###################################################################################################################
 # NETWORK CONFIG
@@ -1552,3 +1579,129 @@ SOAP.Port = 7878
 CharDelete.Method = 0
 CharDelete.MinLevel = 0
 CharDelete.KeepDays = 30
+###################################################################################################################
+# HONOR SETTINGS
+#
+#    HonorableKill
+#         Number of honors for one kill at max level
+#         Default: 124
+#
+#   BG.BonusHonor.AB.Win
+#   BG.BonusHonor.AV.Win <-- not implemented
+#   BG.BonusHonor.WSG.Win
+#   BG.BonusHonor.EOS.Win
+#         Number of honorable kills bonus for winning this BG
+#         Default: 1 or 5
+#
+#   BG.BonusHonor.AB.End  
+#   BG.BonusHonor.AV.End  <-- not implemented
+#   BG.BonusHonor.WSG.End
+#   BG.BonusHonor.EOS.End
+#         Number of honorable kills bonus for this BG
+#         Default: 1 or 5
+#
+#   BG.BonusHonor.AB.Flag <-- for tick
+#   BG.BonusHonor.AV.Flag <-- not implemented
+#   BG.BonusHonor.WSG.Flag
+#   BG.BonusHonor.EOS.Flag <-- for tick
+#         Bonus Honor for capturing flag in this bg
+#         Default: 2
+#
+#   BG.BonusHonor.Holiday
+#         Bonus honor for Call to Arms Q
+#         Default: 5
+###################################################################################################################
+
+HonorableKill = 60
+BG.BonusHonor.AB.Win = 1
+BG.BonusHonor.AV.Win = 1
+BG.BonusHonor.WSG.Win = 5
+BG.BonusHonor.EOS.Win = 1
+BG.BonusHonor.AB.End = 1
+BG.BonusHonor.AV.End = 1
+BG.BonusHonor.WSG.End = 5
+BG.BonusHonor.EOS.End = 1
+BG.BonusHonor.AB.Flag = 1
+BG.BonusHonor.AV.Flag = 2
+BG.BonusHonor.WSG.Flag = 2
+BG.BonusHonor.EOS.Flag = 1
+BG.BonusHonor.Holiday = 5
+
+###################################################################################################################
+# TEAMBG CONFIG
+#
+#    TeamBG.AllowAB
+#    TeamBG.AllowAV
+#    TeamBG.AllowEOS
+#    TeamBG.AllowWSG
+#        Allow TeamBG in that bg
+#        Default: 0 (disable)
+#                 1 (enable)
+#
+#    TeamBG.TeamBG.Faction.Blue
+#    TeamBG.TeamBG.Faction.Red
+#        Which faction is set to player when enter bg
+#        Default: 1 (for blue, player human)
+#                 2 (for red, player orc)
+#
+#    TeamBG.Buff.Blue
+#    TeamBG.Buff.Red
+#        Spell id, its casted on player on bg enter and removed on leave,
+#        could be some red/blue coloration
+#        Default: 0 (disable)
+#
+###################################################################################################################
+
+TeamBG.AllowAB = 0
+TeamBG.AllowAV = 0
+TeamBG.AllowEOS = 0
+TeamBG.AllowWSG = 0
+TeamBG.TeamBG.Faction.Blue = 1
+TeamBG.TeamBG.Faction.Red = 2
+TeamBG.Buff.Blue = 0
+TeamBG.Buff.Red = 0
+
+###################################################################################################################
+# FACTIONED MAPS CONFIG
+#    Set faction and team to player on map add
+#
+#    FactionedMap.Enabled
+#        Enable or disable this feature
+#        Defaul: 0 (disabled)
+#                1 (enabled)
+#
+#    FactionedMap.Ids
+#        Ids of maps where it is enabled
+#        Example: "0,1,571"
+#
+#    FactionedMap.Faction
+#        Faction to set
+#        Default: 1 (player human)
+#
+#    FactionedMap.Team
+#        Team to set
+#        Default: 1 (alliance)
+#                 2 (horde)  
+#
+###################################################################################################################
+
+FactionedMap.Enabled = 0
+FactionedMap.Ids = ""
+FactionedMap.Faction = 1
+FactionedMap.Team = 1
+
+###################################################################################################################
+# OpenMP Config
+#
+#    OpenMP
+#    MapUpdate.Threads
+#        Number of threads to run if the binary was compiled with OpenMP support.
+#        Default: 1
+#        For stable work 4 (if online ~2000)
+#        1 (minimum, normal behavior (single-threaded updates)
+#
+###################################################################################################################
+
+MapUpdate.Threads = 1
+
+

@@ -86,6 +86,7 @@ World::World()
     m_ShutdownTimer = 0;
     m_gameTime=time(NULL);
     m_startTime=m_gameTime;
+    world_diff_time = 0;
     m_maxActiveSessionCount = 0;
     m_maxQueuedSessionCount = 0;
     m_resultQueue = NULL;
@@ -243,10 +244,12 @@ World::AddSession_ (WorldSession* s)
         return;
     }
 
+    BillingPlanFlags BillingFlags = s->IsTrial() ? SESSION_FREE_TRIAL : SESSION_NONE;
+
     WorldPacket packet(SMSG_AUTH_RESPONSE, 1 + 4 + 1 + 4 + 1);
     packet << uint8 (AUTH_OK);
     packet << uint32 (0);                                   // BillingTimeRemaining
-    packet << uint8 (0);                                    // BillingPlanFlags
+    packet << uint8 (BillingFlags);                         // BillingPlanFlags
     packet << uint32 (0);                                   // BillingTimeRested
     packet << uint8 (s->Expansion());                       // 0 - normal, 1 - TBC, must be set in database manually for each account
     s->SendPacket (&packet);
@@ -288,11 +291,13 @@ void World::AddQueuedPlayer(WorldSession* sess)
     sess->SetInQueue(true);
     m_QueuedPlayer.push_back (sess);
 
+    BillingPlanFlags BillingFlags = sess->IsTrial() ? SESSION_FREE_TRIAL : SESSION_NONE;
+
     // The 1st SMSG_AUTH_RESPONSE needs to contain other info too.
     WorldPacket packet (SMSG_AUTH_RESPONSE, 1 + 4 + 1 + 4 + 1 + 4 + 1);
     packet << uint8 (AUTH_WAIT_QUEUE);
     packet << uint32 (0);                                   // BillingTimeRemaining
-    packet << uint8 (0);                                    // BillingPlanFlags
+    packet << uint8 (BillingFlags);                         // BillingPlanFlags
     packet << uint32 (0);                                   // BillingTimeRested
     packet << uint8 (sess->Expansion());                    // 0 - normal, 1 - TBC, must be set in database manually for each account
     packet << uint32(GetQueuePos (sess));                   // position in queue
@@ -525,6 +530,7 @@ void World::LoadConfigSettings(bool reload)
     if (reload)
         sMapMgr.SetGridCleanUpDelay(getConfig(CONFIG_UINT32_INTERVAL_GRIDCLEAN));
 
+    setConfig(CONFIG_UINT32_NUMTHREADS, "MapUpdate.Threads", 2);
     setConfigMin(CONFIG_UINT32_INTERVAL_MAPUPDATE, "MapUpdateInterval", 100, MIN_MAP_UPDATE_DELAY);
     if (reload)
         sMapMgr.SetMapUpdateInterval(getConfig(CONFIG_UINT32_INTERVAL_MAPUPDATE));
@@ -594,6 +600,8 @@ void World::LoadConfigSettings(bool reload)
 
     setConfig(CONFIG_BOOL_INSTANCE_IGNORE_LEVEL, "Instance.IgnoreLevel", false);
     setConfig(CONFIG_BOOL_INSTANCE_IGNORE_RAID,  "Instance.IgnoreRaid", false);
+    //Custom variable - end arena if 2v1 etc.
+    m_configBoolValues[CONFIG_BOOL_END_ARENA_IF_NOT_ENOUGH_PLAYERS] = sConfig.GetBoolDefault("EndArenaIfNotEnoughtPlayers", false);
 
     setConfig(CONFIG_BOOL_CAST_UNSTUCK, "CastUnstuck", true);
     setConfig(CONFIG_UINT32_MAX_SPELL_CASTS_IN_CHAIN, "MaxSpellCastsInChain", 10);
@@ -731,12 +739,51 @@ void World::LoadConfigSettings(bool reload)
     setConfig(CONFIG_BOOL_ARENA_QUEUE_ANNOUNCER_EXIT,                  "Arena.QueueAnnouncer.Exit", false);
     setConfig(CONFIG_UINT32_ARENA_SEASON_ID,                           "Arena.ArenaSeason.ID", 1);
     setConfig(CONFIG_BOOL_ARENA_SEASON_IN_PROGRESS,                    "Arena.ArenaSeason.InProgress", true);
+<<<<<<< HEAD:src/game/World.cpp
     setConfigMin(CONFIG_INT32_ARENA_STARTRATING,                       "Arena.StartRating", -1, -1);
     setConfigMin(CONFIG_INT32_ARENA_STARTPERSONALRATING,               "Arena.StartPersonalRating", -1, -1);
+=======
+    setConfig(CONFIG_UINT32_LOSERNOCHANGE,                             "Arena.LoserNoChange", 0);
+    setConfig(CONFIG_UINT32_LOSERHALFCHANGE,                           "Arena.LoserHalfChange", 0);
+
+    setConfig(CONFIG_UINT32_HONORABLE_KILL,                            "HonorableKill", 124);
+    setConfig(CONFIG_UINT32_BONUS_HONOR_AB_WIN,                        "BG.BonusHonor.AB.Win", 1);
+    setConfig(CONFIG_UINT32_BONUS_HONOR_AB_END,                        "BG.BonusHonor.AB.End", 1);
+    setConfig(CONFIG_UINT32_BONUS_HONOR_WSG_WIN,                       "BG.BonusHonor.WSG.Win", 5);
+    setConfig(CONFIG_UINT32_BONUS_HONOR_WSG_END,                       "BG.BonusHonor.WSG.End", 5);
+    setConfig(CONFIG_UINT32_BONUS_HONOR_AV_WIN,                        "BG.BonusHonor.AV.Win", 5);
+    setConfig(CONFIG_UINT32_BONUS_HONOR_AV_END,                        "BG.BonusHonor.AV.End", 5);
+    setConfig(CONFIG_UINT32_BONUS_HONOR_EOS_WIN,                       "BG.BonusHonor.EOS.Win", 1);
+    setConfig(CONFIG_UINT32_BONUS_HONOR_EOS_END,                       "BG.BonusHonor.EOS.End", 1);
+    setConfig(CONFIG_UINT32_BONUS_HONOR_HOLIDAY,                       "BG.BonusHonor.Holiday",5);
+
+    setConfig(CONFIG_UINT32_BONUS_HONOR_FLAG_WSG,                      "BG.BonusHonor.WSG.Flag",2);
+    setConfig(CONFIG_UINT32_BONUS_HONOR_FLAG_AB,                       "BG.BonusHonor.AB.Flag", 2);
+    setConfig(CONFIG_UINT32_BONUS_HONOR_FLAG_AV,                       "BG.BonusHonor.AV.Flag", 2);
+    setConfig(CONFIG_UINT32_BONUS_HONOR_FLAG_EOS,                      "BG.BonusHonor.EOS.Flag",2);
+>>>>>>> vehicule:src/game/World.cpp
 
     setConfig(CONFIG_BOOL_OFFHAND_CHECK_AT_TALENTS_RESET, "OffhandCheckAtTalentsReset", false);
 
     setConfig(CONFIG_BOOL_KICK_PLAYER_ON_BAD_PACKET, "Network.KickOnBadPacket", false);
+
+    //TeamBG code
+    setConfig(CONFIG_BOOL_TEAM_BG_ALLOW_AB, "TeamBG.AllowAB", false);
+    setConfig(CONFIG_BOOL_TEAM_BG_ALLOW_AV, "TeamBG.AllowAV", false);
+    setConfig(CONFIG_BOOL_TEAM_BG_ALLOW_EOS, "TeamBG.AllowEOS", false);
+    setConfig(CONFIG_BOOL_TEAM_BG_ALLOW_WSG, "TeamBG.AllowWSG", false);
+
+    setConfig(CONFIG_UINT32_TEAM_BG_FACTION_BLUE, "TeamBG.Faction.Blue", 1);
+    setConfig(CONFIG_UINT32_TEAM_BG_FACTION_RED, "TeamBG.Faction.Red", 2);
+    setConfig(CONFIG_UINT32_TEAM_BG_BUFF_BLUE, "TeamBG.Buff.Blue", 0);
+    setConfig(CONFIG_UINT32_TEAM_BG_BUFF_RED, "TeamBG.Buff.Red", 0);
+
+    //Make some maps friendly for all
+    std::string factionedMapIds = sConfig.GetStringDefault("FactionedMap.Ids", "");
+    sMapMgr.SetFactionedMaps(factionedMapIds.c_str());
+    setConfig(CONFIG_BOOL_FACTIONED_MAP_ENABLED, "FactionedMap.Enabled", false);
+    setConfig(CONFIG_UINT32_FACTIONED_MAP_FACTION, "FactionedMap.Faction", 1);
+    setConfig(CONFIG_UINT32_FACTIONED_MAP_TEAM, "FactionedMap.Team", 1);
 
     if(int clientCacheId = sConfig.GetIntDefault("ClientCacheVersion", 0))
     {
@@ -980,6 +1027,14 @@ void World::SetInitialWorldSettings()
     sLog.outString( "Loading Spell Bonus Data..." );
     sSpellMgr.LoadSpellBonuses();                           // must be after LoadSpellChains
 
+    // DEVELOPER CODE START 
+    sLog.outString( "Loading Spell Stack Data..." ); 
+    sSpellMgr.LoadSpellStack(); 
+ 
+    sLog.outString( "Loading Spell Stack Group Data..." ); 
+    sSpellMgr.LoadSpellStackGroup(); 
+    // DEVELOPER CODE END 
+
     sLog.outString( "Loading Spell Proc Item Enchant..." );
     sSpellMgr.LoadSpellProcItemEnchant();                   // must be after LoadSpellChains
 
@@ -995,6 +1050,8 @@ void World::SetInitialWorldSettings()
     sLog.outString( "Loading Items..." );                   // must be after LoadRandomEnchantmentsTable and LoadPageTexts
     sObjectMgr.LoadItemPrototypes();
 
+    sLog.outString( "Loading Items Extended Cost..." );
+    sObjectMgr.LoadItemExtendedCost();
     sLog.outString( "Loading Creature Model Based Info Data..." );
     sObjectMgr.LoadCreatureModelInfo();
 
@@ -1230,6 +1287,11 @@ void World::SetInitialWorldSettings()
     sLog.outString( "Loading Scripts text locales..." );    // must be after Load*Scripts calls
     sObjectMgr.LoadDbScriptStrings();
 
+    sLog.outString( "Loading VehicleData..." );
+    sObjectMgr.LoadVehicleData();
+    sLog.outString( "Loading VehicleSeatData..." );
+    sObjectMgr.LoadVehicleSeatData();
+
     sLog.outString( "Loading CreatureEventAI Texts...");
     sEventAIMgr.LoadCreatureEventAI_Texts(false);       // false, will checked in LoadCreatureEventAI_Scripts
 
@@ -1291,6 +1353,10 @@ void World::SetInitialWorldSettings()
     sLog.outString( "Starting BattleGround System" );
     sBattleGroundMgr.CreateInitialBattleGrounds();
     sBattleGroundMgr.InitAutomaticArenaPointDistribution();
+
+    // - Apply spell hacks
+    sLog.outString( "Apply spell hacks..." );
+    sSpellMgr.ApplySpellHacks();
 
     //Not sure if this can be moved up in the sequence (with static data loading) as it uses MapManager
     sLog.outString( "Loading Transports..." );
@@ -1369,6 +1435,9 @@ void World::DetectDBCLang()
 /// Update the World !
 void World::Update(uint32 diff)
 {
+    //World diff time, showed in .s info, for lag detect...
+    world_diff_time = diff;
+
     ///- Update the different timers
     for(int i = 0; i < WUPDATE_COUNT; ++i)
     {
@@ -1383,7 +1452,10 @@ void World::Update(uint32 diff)
 
     /// Handle daily quests reset time
     if (m_gameTime > m_NextDailyQuestReset)
+    {
         ResetDailyQuests();
+        ResetBGDaily();
+    }
 
     /// Handle weekly quests reset time
     if (m_gameTime > m_NextWeeklyQuestReset)
@@ -1987,6 +2059,14 @@ void World::InitDailyQuestResetTime()
         CharacterDatabase.PExecute("INSERT INTO saved_variables (NextDailyQuestResetTime) VALUES ('"UI64FMTD"')", uint64(m_NextDailyQuestReset));
     else
         delete result;
+}
+
+void World::ResetBGDaily()
+{
+    CharacterDatabase.Execute("DELETE FROM character_battleground_status");
+    for(SessionMap::const_iterator itr = m_sessions.begin(); itr != m_sessions.end(); ++itr)
+        if (itr->second->GetPlayer())
+            itr->second->GetPlayer()->ResetBGStatus();
 }
 
 void World::ResetDailyQuests()

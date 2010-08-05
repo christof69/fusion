@@ -207,6 +207,18 @@ struct AchievementCriteriaEntry
             uint32  castCount;                              // 4
         } cast_spell;
 
+        
+        // ACHIEVEMENT_CRITERIA_TYPE_BG_OBJECTIVE_CAPTURE       = 30
+        struct
+        {
+            uint32  captureID;                                // 3
+            uint32  captureCount;                             // 4
+            //uint32  additionalRequirement1_type;            // 5 
+            //uint32  additionalRequirement1_value;           // 6 
+            //uint32  additionalRequirement2_type;            // 7 
+            //uint32  additionalRequirement2_value;           // 8 
+        } objective_capture;
+
         // ACHIEVEMENT_CRITERIA_TYPE_HONORABLE_KILL_AT_AREA = 31
         struct
         {
@@ -411,6 +423,8 @@ struct AchievementCriteriaEntry
         {
             uint32  unused;                                 // 3
             uint32  killCount;                              // 4
+            uint32  flag;                                   // 5
+            uint32  mapid;                                  // 6
         } special_pvp_kill;
 
         // ACHIEVEMENT_CRITERIA_TYPE_FISH_IN_GAMEOBJECT     = 72
@@ -1725,7 +1739,7 @@ struct VehicleEntry
     uint32  m_uiLocomotionType;                             // 34
     float   m_msslTrgtImpactTexRadius;                      // 35
     uint32  m_uiSeatIndicatorType;                          // 36
-                                                            // 37, new in 3.1
+    uint32  m_powerType;                                    // 37, new in 3.1                                                        // 37, new in 3.1
                                                             // 38, new in 3.1
                                                             // 39, new in 3.1
 };
@@ -1779,6 +1793,8 @@ struct VehicleSeatEntry
     int32   m_uiSkin;                                       // 44
     uint32  m_flagsB;                                       // 45
                                                             // 46-57 added in 3.1, floats mostly
+
+    bool IsUsable() const { return m_flags & 0x2000000; }
 };
 
 struct WMOAreaTableEntry

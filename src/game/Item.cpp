@@ -244,6 +244,8 @@ Item::Item( )
     m_container = NULL;
     m_lootGenerated = false;
     mb_in_trade = false;
+    m_ExtendedCostId = 0;
+    m_price = 0;
 }
 
 bool Item::Create( uint32 guidlow, uint32 itemid, Player const* owner)
@@ -283,11 +285,26 @@ void Item::UpdateDuration(Player* owner, uint32 diff)
     if (GetUInt32Value(ITEM_FIELD_DURATION)<=diff)
     {
         owner->DestroyItem(GetBagSlot(), GetSlot(), true);
+
+        //Some items with duration create new item after expire
+        if((GetProto()->ExtraFlags & ITEM_EXTRA_CREATE_ITEM_ON_EXPIRE) && !loot.empty())
+        {
+            for(LootItemList::iterator itr = loot.items.begin(); itr != loot.items.end(); ++itr)
+            {
+                if (Item* Item = owner->StoreNewItemInInventorySlot((*itr).itemid, (*itr).count))
+                    owner->SendNewItem(Item,(*itr).count, true, false);               
+            }
+        }
         return;
     }
 
     SetUInt32Value(ITEM_FIELD_DURATION, GetUInt32Value(ITEM_FIELD_DURATION) - diff);
     SetState(ITEM_CHANGED, owner);                          // save new time in database
+
+    //Remove refundable flag for next time if item is no logner refundable
+    if(HasFlag(ITEM_FIELD_FLAGS, ITEM_FLAGS_REFUNDABLE))
+        if(!GetUInt32Value(ITEM_FIELD_CREATE_PLAYED_TIME) || (GetOwner() && GetOwner()->m_Played_time[0] > (GetUInt32Value(ITEM_FIELD_CREATE_PLAYED_TIME) + 2*60*60)))
+            RemoveFlag(ITEM_FIELD_FLAGS, ITEM_FLAGS_REFUNDABLE);
 }
 
 void Item::SaveToDB()
@@ -301,10 +318,10 @@ void Item::SaveToDB()
             CharacterDatabase.escape_string(text);
             CharacterDatabase.PExecute( "DELETE FROM item_instance WHERE guid = '%u'", guid );
             std::ostringstream ss;
-            ss << "INSERT INTO item_instance (guid,owner_guid,data,text) VALUES (" << guid << "," << GUID_LOPART(GetOwnerGUID()) << ",'";
+            ss << "INSERT INTO item_instance (guid,owner_guid,data,text, ExtendedCost, price) VALUES (" << guid << "," << GUID_LOPART(GetOwnerGUID()) << ",'";
             for(uint16 i = 0; i < m_valuesCount; ++i )
                 ss << GetUInt32Value(i) << " ";
-            ss << "', '" << text << "')";
+            ss << "', '" << text << "', '" << m_ExtendedCostId << "', '" << m_price << "')";
             CharacterDatabase.Execute( ss.str().c_str() );
         } break;
         case ITEM_CHANGED:
@@ -316,7 +333,7 @@ void Item::SaveToDB()
             for(uint16 i = 0; i < m_valuesCount; ++i )
                 ss << GetUInt32Value(i) << " ";
             ss << "', owner_guid = '" << GUID_LOPART(GetOwnerGUID());
-            ss << "', text = '" << text << "' WHERE guid = '" << guid << "'";
+            ss << "', text = '" << text << "', ExtendedCost = '" << m_ExtendedCostId << "', price = '" << m_price << "' WHERE guid = '" << guid << "'";
 
             CharacterDatabase.Execute( ss.str().c_str() );
 
@@ -429,7 +446,17 @@ bool Item::LoadFromDB(uint32 guid, uint64 owner_guid, QueryResult *result)
 
         CharacterDatabase.Execute( ss.str().c_str() );
     }
-
+    //Set extended cost for refundable item
+    if(HasFlag(ITEM_FIELD_FLAGS, ITEM_FLAGS_REFUNDABLE))
+    {
+        QueryResult *result_ext = CharacterDatabase.PQuery("SELECT ExtendedCost, price FROM item_instance WHERE guid = '%u'", guid);
+        if(result_ext)
+        {
+            m_ExtendedCostId = result_ext->Fetch()[0].GetUInt32();
+            m_price = result_ext->Fetch()[1].GetUInt32();
+            delete result_ext;
+        }
+    }
     return true;
 }
 
@@ -874,6 +901,7 @@ bool Item::GemsFitSockets() const
             }
         }
 
+        SocketColor = SocketColor ? SocketColor : PRISMATIC_SOCKET; 
         fits &= (GemColor & SocketColor) ? true : false;
     }
     return fits;

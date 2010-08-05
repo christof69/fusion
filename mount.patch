@@ -1,0 +1,759 @@
+diff --git a/sql/vehicle_mount.sql b/sql/vehicle_mount.sql new file mode 100644 index 0000000..0917512 --- 
+/dev/null +++ b/sql/vehicle_mount.sql @@ -0,0 +1,11 @@ +ALTER TABLE creature_template + ADD COLUMN 
+`VehicleEntry` mediumint(8) unsigned NOT NULL default '0' AFTER `PetSpellDataId`; + +-- Mechano-hog, Mekgineer's 
+Chopper +UPDATE creature_template SET VehicleEntry = 318, IconName = 'vehichleCursor' WHERE entry IN (29929, 
+32286); + +-- Traveler's Tundra Mammoth, Grand Ice Mammoth, Grand Black War Mammoth, Grand Caravan Mammoth 
++UPDATE creature_template SET VehicleEntry = 312, IconName = 'vehichleCursor' WHERE entry IN (32633, 32640, 
+31857, 31858, 31861, 31862, 32212, 32213); + +-- X-53 Touring Rocket +UPDATE creature_template SET VehicleEntry 
+= 774, IconName = 'vehichleCursor' WHERE entry = 40725; diff --git a/src/game/AggressorAI.cpp 
+b/src/game/AggressorAI.cpp index 7aa16c1..c3f2b03 100644 --- a/src/game/AggressorAI.cpp +++ 
+b/src/game/AggressorAI.cpp @@ -103,7 +103,7 @@ void AggressorAI::EnterEvadeMode()
+         //i_tracker.Reset(TIME_INTERVAL_LOOK);
+     }
+ 
+- if(!m_creature->isCharmed() && !m_creature->GetVehicleGUID()) + if(!m_creature->isCharmed() && 
+(!m_creature->GetVehicle() || !m_creature->GetVehicleGUID()))
+     {
+         m_creature->RemoveAllAuras();
+ 
+diff --git a/src/game/Creature.h b/src/game/Creature.h index e883c5f..42ec6c3 100644 --- a/src/game/Creature.h 
++++ b/src/game/Creature.h @@ -117,6 +117,7 @@ struct CreatureInfo
+     int32 resistance6;
+     uint32 spells[CREATURE_MAX_SPELLS];
+     uint32 PetSpellDataId; + uint32 VehicleEntry;
+     uint32 mingold;
+     uint32 maxgold;
+     char const* AIName; @@ -409,9 +410,6 @@ class MANGOS_DLL_SPEC Creature : public Unit
+         void GetRespawnCoord(float &x, float &y, float &z, float* ori = NULL, float* dist =NULL) const;
+         uint32 GetEquipmentId() const { return m_equipmentId; }
+ 
+- bool CreateVehicleKit(uint32 id); - Vehicle *GetVehicleKit()const { return m_vehicleKit; } -
+         CreatureSubtype GetSubtype() const { return m_subtype; }
+         bool isPet() const { return m_subtype == CREATURE_SUBTYPE_PET; }
+         bool isVehicle() const { return m_subtype == CREATURE_SUBTYPE_VEHICLE; } @@ -696,7 +694,6 @@ class 
+MANGOS_DLL_SPEC Creature : public Unit
+         float CombatStartX;
+         float CombatStartY;
+         float CombatStartZ; - Vehicle* m_vehicleKit;
+         float m_summonXpoint;
+         float m_summonYpoint;
+         float m_summonZpoint; diff --git a/src/game/DBCEnums.h b/src/game/DBCEnums.h index dcd6650..f8c1925 
+100644 --- a/src/game/DBCEnums.h +++ b/src/game/DBCEnums.h @@ -432,6 +432,19 @@ enum SpellEffectIndex
+     EFFECT_INDEX_2 = 2
+ };
+ 
++enum VehicleSeatFlags +{ + SEAT_FREE = 0x01, // free seat + SEAT_FULL = 0x02, // seat occupied by 
+player/creature + // special cases + SEAT_VEHICLE_FREE = 0x04, // seat occupied by vehicle, but that vehicle is 
+free + SEAT_VEHICLE_FULL = 0x08, // seat occupied by vehicle and that vehicle is full too + 
+SEAT_FLAG_HIDE_PASSENGER = 0x00000200, // Passenger is hidden + SEAT_FLAG_MAIN_RIDER = 0x00000800, // Can 
+control vehicle + SEAT_FLAG_USABLE = 0x02000000, + SEAT_FLAG_CAN_CAST = 0x20000000, +}; +
+ #define MAX_EFFECT_INDEX 3
+ 
+ #endif
+diff --git a/src/game/DBCStructure.h b/src/game/DBCStructure.h index 130b3f1..d94fb7c 100644 --- 
+a/src/game/DBCStructure.h +++ b/src/game/DBCStructure.h @@ -1693,6 +1693,8 @@ struct TotemCategoryEntry
+     uint32 categoryMask; // 19 (compatibility mask for same type: different for totems, compatible from high to 
+low for rods)
+ };
+ 
++#define MAX_VEHICLE_SEAT 8 +
+ struct VehicleEntry
+ {
+     uint32 m_ID; // 0 @@ -1701,7 +1703,7 @@ struct VehicleEntry
+     float m_pitchSpeed; // 3
+     float m_pitchMin; // 4
+     float m_pitchMax; // 5 - uint32 m_seatID[8]; // 6-13 + uint32 m_seatID[MAX_VEHICLE_SEAT]; // 6-13
+     float m_mouseLookOffsetPitch; // 14
+     float m_cameraFadeDistScalarMin; // 15
+     float m_cameraFadeDistScalarMax; // 16 @@ -1780,7 +1782,7 @@ struct VehicleSeatEntry
+     uint32 m_flagsB; // 45
+                                                             // 46-57 added in 3.1, floats mostly
+ 
+- bool IsUsable() const { return m_flags & 0x2000000; } + bool IsUsable() const { return m_flags & 
+SEAT_FLAG_USABLE; }
+ };
+ 
+ struct WMOAreaTableEntry diff --git a/src/game/GameObject.cpp b/src/game/GameObject.cpp index e49e53e..eca6b89 
+100644 --- a/src/game/GameObject.cpp +++ b/src/game/GameObject.cpp @@ -1284,6 +1284,8 @@ void 
+GameObject::Use(Unit* user)
+                 BattleGround *bg = player->GetBattleGround();
+                 if (!bg)
+                     return; + if (player->GetVehicle()) + return;
+                 // BG flag click
+                 // AB:
+                 // 15001 @@ -1309,6 +1311,8 @@ void GameObject::Use(Unit* user)
+                 BattleGround *bg = player->GetBattleGround();
+                 if (!bg)
+                     return; + if (player->GetVehicle()) + return;
+                 // BG flag dropped
+                 // WS:
+                 // 179785 - Silverwing Flag diff --git a/src/game/MiscHandler.cpp b/src/game/MiscHandler.cpp 
+index 800a8f6..2eecc4b 100644 --- a/src/game/MiscHandler.cpp +++ b/src/game/MiscHandler.cpp @@ -269,6 +269,7 @@ 
+void WorldSession::HandleLogoutRequestOpcode( WorldPacket & /*recv_data*/ )
+     if( GetPlayer()->isInCombat() || //...is in combat
+         GetPlayer()->duel || //...is in Duel
+         GetPlayer()->GetVehicleGUID() || //...is in vehicle + GetPlayer()->GetVehicleKit() || //...is in 
+vehicle mount
+                                                             //...is jumping ...is falling
+         GetPlayer()->m_movementInfo.HasMovementFlag(MovementFlags(MOVEFLAG_FALLING | MOVEFLAG_FALLINGFAR)))
+     { diff --git a/src/game/MovementHandler.cpp b/src/game/MovementHandler.cpp index d370879..1dc1d8a 100644 
+--- a/src/game/MovementHandler.cpp +++ b/src/game/MovementHandler.cpp @@ -44,6 +44,9 @@ void 
+WorldSession::HandleMoveWorldportAckOpcode()
+     if(!GetPlayer()->IsBeingTeleportedFar())
+         return;
+ 
++ if (_player->GetVehicleKit()) + _player->GetVehicleKit()->RemoveAllPassengers(); +
+     // get the teleport destination
+     WorldLocation &loc = GetPlayer()->GetTeleportDest();
+ 
+@@ -248,7 +251,14 @@ void WorldSession::HandleMovementOpcodes( WorldPacket & recv_data )
+     }
+ 
+     /* handle special cases */ - if (movementInfo.HasMovementFlag(MOVEFLAG_ONTRANSPORT) && 
+!mover->GetVehicleGUID()) + if((movementInfo.HasMovementFlag (MOVEFLAG_ONTRANSPORT)) && 
+(movementInfo.HasMovementFlag (MOVEFLAG_ROOT)) && (recv_data.size()==52)) + { + if(plMover->GetVehicle() && 
+plMover->GetVehicleGUID() && plMover->GetTypeId()==TYPEID_PLAYER) + { + _player->ExitVehicle(); + } + } + else 
+if (movementInfo.HasMovementFlag (MOVEFLAG_ONTRANSPORT) && !mover->GetVehicle() && !mover->GetVehicleGUID())
+     {
+         // transports size limited
+         // (also received at zeppelin/lift leave by some reason with t_* as absolute in continent coordinates, 
+can be safely skipped) @@ -275,6 +285,10 @@ void WorldSession::HandleMovementOpcodes( WorldPacket & recv_data )
+                 {
+                     plMover->m_transport = (*iter);
+                     (*iter)->AddPassenger(plMover); + + if (plMover->GetVehicleKit()) + 
+plMover->GetVehicleKit()->RemoveAllPassengers(); +
+                     break;
+                 }
+             }
+@@ -318,6 +332,9 @@ void WorldSession::HandleMovementOpcodes( WorldPacket & recv_data )
+     movementInfo.Write(data); // write data
+     mover->SendMessageToSetExcept(&data, _player);
+ 
++ mover->m_movementInfo = movementInfo; + mover->SetPosition(movementInfo.GetPos()->x, movementInfo.GetPos()->y, 
+movementInfo.GetPos()->z, movementInfo.GetPos()->o); +
+     if(plMover) // nothing is charmed, or player charmed
+     {
+         plMover->SetPosition(movementInfo.GetPos()->x, movementInfo.GetPos()->y, movementInfo.GetPos()->z, 
+movementInfo.GetPos()->o); @@ -516,20 +533,28 @@ void WorldSession::HandleRequestVehicleExit(WorldPacket 
+&recv_data)
+     sLog.outDebug("WORLD: Recvd CMSG_REQUEST_VEHICLE_EXIT");
+     recv_data.hexlike();
+ 
+- uint64 vehicleGUID = _player->GetVehicleGUID(); + GetPlayer()->ExitVehicle(); +}
+ 
+- if(!vehicleGUID) // something wrong here... - return; +void 
+WorldSession::HandleRequestVehiclePrevSeat(WorldPacket &recv_data) +{ + DEBUG_LOG("WORLD: Recvd 
+CMSG_REQUEST_VEHICLE_PREV_SEAT"); + recv_data.hexlike();
+ 
+- if(Vehicle *vehicle = ObjectAccessor::GetVehicle(vehicleGUID)) - { - _player->ExitVehicle(); - } + 
+GetPlayer()->ChangeSeat(-1, false); +} + +void WorldSession::HandleRequestVehicleNextSeat(WorldPacket 
+&recv_data) +{ + DEBUG_LOG("WORLD: Recvd CMSG_REQUEST_VEHICLE_NEXT_SEAT"); + recv_data.hexlike(); + + 
+GetPlayer()->ChangeSeat(-1, true);
+ }
+ 
+ void WorldSession::HandleRequestVehicleSwitchSeat(WorldPacket &recv_data)
+ { - sLog.outDebug("WORLD: Recvd CMSG_REQUEST_VEHICLE_SWITCH_SEAT"); + DEBUG_LOG("WORLD: Recvd 
+CMSG_CHANGE_SEATS_ON_CONTROLLED_VEHICLE");
+     recv_data.hexlike();
+ 
+     uint64 vehicleGUID = _player->GetVehicleGUID(); @@ -537,38 +562,42 @@ void 
+WorldSession::HandleRequestVehicleSwitchSeat(WorldPacket &recv_data)
+     if(!vehicleGUID) // something wrong here...
+         return;
+ 
+- if(Vehicle *vehicle = ObjectAccessor::GetVehicle(vehicleGUID)) + if(recv_data.GetOpcode() == 
+CMSG_REQUEST_VEHICLE_PREV_SEAT) + { + _player->ChangeSeat(-1, false); + return; + } + else 
+if(recv_data.GetOpcode() == CMSG_REQUEST_VEHICLE_NEXT_SEAT)
+     { - ObjectGuid guid; - recv_data >> guid.ReadAsPacked(); + _player->ChangeSeat(-1, true); + return; + }
+ 
+- int8 seatId = 0; - recv_data >> seatId; + ObjectGuid guid, guid2; + recv_data >> guid.ReadAsPacked();
+ 
+- if(!guid.IsEmpty()) - { - if(vehicleGUID != guid.GetRawValue()) - { - if(Vehicle *veh = 
+ObjectAccessor::GetVehicle(guid.GetRawValue())) - { - if(!_player->IsWithinDistInMap(veh, 10)) - return; + 
+MovementInfo mi; + recv_data >> mi; + _player->m_movementInfo = mi;
+ 
+- if(Vehicle *v = veh->FindFreeSeat(&seatId, false)) - { - vehicle->RemovePassenger(_player); - 
+_player->EnterVehicle(v, seatId, false); - } - } - return; - } - } - if(Vehicle *v = 
+vehicle->FindFreeSeat(&seatId, false)) + recv_data >> guid2.ReadAsPacked(); + + int8 seatId; + recv_data >> 
+seatId; + + if(guid.GetRawValue() == guid2.GetRawValue()) + _player->ChangeSeat(seatId, false); + else 
+if(Vehicle *vehicle = ObjectAccessor::GetVehicle(guid2.GetRawValue())) + { + if(vehicle->HasEmptySeat(seatId))
+         { - vehicle->RemovePassenger(_player); - _player->EnterVehicle(v, seatId, false); + 
+_player->ExitVehicle(); + _player->EnterVehicle(vehicle, seatId);
+         }
+     }
++ + if (Unit *pVehicleBase = GetPlayer()->GetVehicleBase()) + GetPlayer()->ChangeSeat(seatId);
+ }
+ 
+ void WorldSession::HandleChangeSeatsOnControlledVehicle(WorldPacket &recv_data) @@ -616,6 +645,45 @@ void 
+WorldSession::HandleChangeSeatsOnControlledVehicle(WorldPacket &recv_data)
+     }
+ }
+ 
++void WorldSession::HandleEnterPlayerVehicle(WorldPacket &recv_data) +{ + DEBUG_LOG("WORLD: Recvd 
+CMSG_PLAYER_VEHICLE_ENTER"); + recv_data.hexlike(); + + ObjectGuid guid; + recv_data >> guid; + + if (Player* pl 
+= ObjectAccessor::FindPlayer(guid)) + { + if (!pl->GetVehicleKit()) + return; + if 
+(!pl->IsInSameRaidWith(GetPlayer())) + return; + if (!pl->IsWithinDistInMap(GetPlayer(), INTERACTION_DISTANCE)) 
++ return; + if (pl->GetTransport()) + return; + GetPlayer()->EnterVehicle(pl->GetVehicleKit()); + } +} + +void 
+WorldSession::HandleEjectPasenger(WorldPacket &recv_data) +{ + DEBUG_LOG("WORLD: Recvd CMSG_EJECT_PASSENGER"); + 
+recv_data.hexlike(); + + if(recv_data.GetOpcode()==CMSG_EJECT_PASSENGER) + { + if (GetPlayer()->GetVehicleKit()) 
++ { + ObjectGuid guid; + recv_data >> guid; + if(Player* Pl = ObjectAccessor::FindPlayer(guid)) + 
+Pl->ExitVehicle(); + } + } +} +
+ void WorldSession::HandleMountSpecialAnimOpcode(WorldPacket& /*recvdata*/)
+ {
+     //DEBUG_LOG("WORLD: Recvd CMSG_MOUNTSPECIAL_ANIM"); diff --git a/src/game/Object.cpp b/src/game/Object.cpp 
+index 3eef9d8..27cf169 100644 --- a/src/game/Object.cpp +++ b/src/game/Object.cpp @@ -289,7 +289,7 @@ void 
+Object::BuildMovementUpdate(ByteBuffer * data, uint16 updateFlags) const
+                         }
+                     }
+                 }
+- if(unit->GetVehicleGUID()) + if (unit->GetVehicle() || unit->GetVehicleGUID())
+                    unit->m_movementInfo.AddMovementFlag(MOVEFLAG_ONTRANSPORT);
+ 
+             }
+@@ -298,7 +298,7 @@ void Object::BuildMovementUpdate(ByteBuffer * data, uint16 updateFlags) const
+             {
+                 Player *player = ((Player*)unit);
+ 
+- if(player->GetTransport()) + if(player->GetTransport() || player->GetVehicle())
+                     player->m_movementInfo.AddMovementFlag(MOVEFLAG_ONTRANSPORT);
+                 else
+                     player->m_movementInfo.RemoveMovementFlag(MOVEFLAG_ONTRANSPORT); diff --git 
+a/src/game/Opcodes.cpp b/src/game/Opcodes.cpp index 0bded77..0faaa90 100644 --- a/src/game/Opcodes.cpp +++ 
+b/src/game/Opcodes.cpp @@ -1169,8 +1169,8 @@ OpcodeHandler opcodeTable[NUM_MSG_TYPES] =
+     /*0x474*/ { "SMSG_CHAR_CUSTOMIZE", STATUS_NEVER, &WorldSession::Handle_ServerSide },
+     /*0x475*/ { "SMSG_PET_RENAMEABLE", STATUS_NEVER, &WorldSession::Handle_ServerSide },
+     /*0x476*/ { "CMSG_REQUEST_VEHICLE_EXIT", STATUS_LOGGEDIN, &WorldSession::HandleRequestVehicleExit }, - 
+/*0x477*/ { "CMSG_REQUEST_VEHICLE_PREV_SEAT", STATUS_LOGGEDIN, 
+&WorldSession::HandleChangeSeatsOnControlledVehicle}, - /*0x478*/ { "CMSG_REQUEST_VEHICLE_NEXT_SEAT", 
+STATUS_LOGGEDIN, &WorldSession::HandleChangeSeatsOnControlledVehicle}, + /*0x477*/ { 
+"CMSG_REQUEST_VEHICLE_PREV_SEAT", STATUS_LOGGEDIN, &WorldSession::HandleRequestVehiclePrevSeat }, + /*0x478*/ { 
+"CMSG_REQUEST_VEHICLE_NEXT_SEAT", STATUS_LOGGEDIN, &WorldSession::HandleRequestVehicleNextSeat },
+     /*0x479*/ { "CMSG_REQUEST_VEHICLE_SWITCH_SEAT", STATUS_LOGGEDIN, 
+&WorldSession::HandleRequestVehicleSwitchSeat },
+     /*0x47A*/ { "CMSG_PET_LEARN_TALENT", STATUS_LOGGEDIN, &WorldSession::HandlePetLearnTalent },
+     /*0x47B*/ { "CMSG_PET_UNLEARN_TALENTS", STATUS_NEVER, &WorldSession::Handle_NULL }, @@ -1214,12 +1214,12 @@ 
+OpcodeHandler opcodeTable[NUM_MSG_TYPES] =
+     /*0x4A1*/ { "SMSG_SERVER_INFO_RESPONSE", STATUS_NEVER, &WorldSession::Handle_ServerSide },
+     /*0x4A2*/ { "CMSG_CHECK_LOGIN_CRITERIA", STATUS_NEVER, &WorldSession::Handle_NULL },
+     /*0x4A3*/ { "SMSG_SERVER_BUCK_DATA_START", STATUS_NEVER, &WorldSession::Handle_ServerSide }, - /*0x4A4*/ { 
+"CMSG_QUERY_VEHICLE_STATUS", STATUS_NEVER, &WorldSession::Handle_NULL }, + /*0x4A4*/ { 
+"CMSG_QUERY_VEHICLE_STATUS", STATUS_LOGGEDIN, &WorldSession::Handle_NULL },
+     /*0x4A5*/ { "UMSG_UNKNOWN_1189", STATUS_NEVER, &WorldSession::Handle_NULL },
+     /*0x4A6*/ { "SMSG_BATTLEGROUND_INFO_THROTTLED", STATUS_NEVER, &WorldSession::Handle_ServerSide },
+     /*0x4A7*/ { "SMSG_PLAYER_VEHICLE_DATA", STATUS_NEVER, &WorldSession::Handle_ServerSide }, - /*0x4A8*/ { 
+"CMSG_UNKNOWN_1192", STATUS_NEVER, &WorldSession::Handle_NULL }, - /*0x4A9*/ { "CMSG_EJECT_PASSENGER", 
+STATUS_NEVER, &WorldSession::Handle_NULL }, + /*0x4A8*/ { "CMSG_PLAYER_VEHICLE_ENTER", STATUS_LOGGEDIN, 
+&WorldSession::HandleEnterPlayerVehicle }, + /*0x4A9*/ { "CMSG_EJECT_PASSENGER", STATUS_LOGGEDIN, 
+&WorldSession::HandleEjectPasenger },
+     /*0x4AA*/ { "SMSG_PET_GUIDS", STATUS_NEVER, &WorldSession::Handle_ServerSide },
+     /*0x4AB*/ { "SMSG_CLIENTCACHE_VERSION", STATUS_NEVER, &WorldSession::Handle_ServerSide },
+     /*0x4AC*/ { "UMSG_UNKNOWN_1196", STATUS_NEVER, &WorldSession::Handle_NULL }, diff --git 
+a/src/game/Opcodes.h b/src/game/Opcodes.h index 1aacba8..0fa87af 100644 --- a/src/game/Opcodes.h +++ 
+b/src/game/Opcodes.h @@ -1226,7 +1226,7 @@ enum Opcodes
+     UMSG_UNKNOWN_1189 = 0x4A5, // not found, old SMSG_PET_GUIDS
+     SMSG_BATTLEGROUND_INFO_THROTTLED = 0x4A6, // empty, "You can't do that yet"
+     SMSG_PLAYER_VEHICLE_DATA = 0x4A7, // smsg guid+uint32 (vehicle) 
+EVENT_PLAYER_GAINS_VEHICLE_DATA/EVENT_PLAYER_LOSES_VEHICLE_DATA - CMSG_UNKNOWN_1192 = 0x4A8, // cmsg uint64 + 
+CMSG_PLAYER_VEHICLE_ENTER = 0x4A8, // cmsg uint64
+     CMSG_EJECT_PASSENGER = 0x4A9, // cmsg uint64
+     SMSG_PET_GUIDS = 0x4AA, // shifted+5
+     SMSG_CLIENTCACHE_VERSION = 0x4AB, // shifted+5 diff --git a/src/game/Player.cpp b/src/game/Player.cpp index 
+f1b7649..3ee3652 100644 --- a/src/game/Player.cpp +++ b/src/game/Player.cpp @@ -1754,6 +1754,10 @@ bool 
+Player::TeleportTo(uint32 mapid, float x, float y, float z, float orientati
+         m_transport = NULL;
+         m_movementInfo.ClearTransportData();
+     }
++ + if (GetVehicleKit()) + GetVehicleKit()->RemoveAllPassengers(); +
+     ExitVehicle();
+ 
+     // The player was ported to another map and looses the duel immediately. @@ -3993,6 +3997,7 @@ void 
+Player::InitVisibleBits()
+     updateVisualBits.SetBit(PLAYER_BYTES_3);
+     updateVisualBits.SetBit(PLAYER_DUEL_TEAM);
+     updateVisualBits.SetBit(PLAYER_GUILD_TIMESTAMP); + updateVisualBits.SetBit(UNIT_NPC_FLAGS);
+ 
+     // PLAYER_QUEST_LOG_x also visible bit on official (but only on party/raid)...
+     for(uint16 i = PLAYER_QUEST_LOG_1_1; i < PLAYER_QUEST_LOG_25_2; i += MAX_QUEST_OFFSET) @@ -6019,7 +6024,9 
+@@ ActionButton const* Player::GetActionButton(uint8 button)
+ 
+ bool Player::SetPosition(float x, float y, float z, float orientation, bool teleport)
+ { - // prevent crash when a bad coord is sent by the client + if(!Unit::SetPosition(x, y, z, orientation, 
+teleport)) + return false; +
+     if(!MaNGOS::IsValidMapCoord(x,y,z,orientation))
+     {
+         DEBUG_LOG("Player::SetPosition(%f, %f, %f, %f, %d) .. bad coordinates for player 
+%d!",x,y,z,orientation,teleport,GetGUIDLow()); @@ -18206,7 +18213,7 @@ bool 
+Player::ActivateTaxiPathTo(std::vector<uint32> const& nodes, Creature* npc
+     if(npc)
+     {
+         // not let cheating with start flight mounted - if(IsMounted() || GetVehicleGUID()) + if(IsMounted() || 
+GetVehicle() || GetVehicleGUID())
+         {
+             WorldPacket data(SMSG_ACTIVATETAXIREPLY, 4);
+             data << uint32(ERR_TAXIPLAYERALREADYMOUNTED); @@ -19608,7 +19615,7 @@ void 
+Player::SendInitialPacketsAfterAddToMap()
+         SendMessageToSet(&data2,true);
+     }
+ 
+- if(GetVehicleGUID()) + if(GetVehicle() || GetVehicleGUID())
+     {
+         WorldPacket data3(SMSG_FORCE_MOVE_ROOT, 10);
+         data3 << GetPackGUID(); diff --git a/src/game/Spell.cpp b/src/game/Spell.cpp index de790c9..7c462e0 
+100644 --- a/src/game/Spell.cpp +++ b/src/game/Spell.cpp @@ -4538,12 +4538,12 @@ SpellCastResult 
+Spell::CheckCast(bool strict)
+         return locRes;
+ 
+     // not let players cast spells at mount (and let do it to creatures) - if ((m_caster->IsMounted() || 
+m_caster->GetVehicleGUID()) && m_caster->GetTypeId()==TYPEID_PLAYER && !m_IsTriggeredSpell && + if 
+((m_caster->IsMounted() || m_caster->GetVehicle() || m_caster->GetVehicleGUID()) && 
+m_caster->GetTypeId()==TYPEID_PLAYER && !m_IsTriggeredSpell &&
+         !IsPassiveSpell(m_spellInfo) && !(m_spellInfo->Attributes & SPELL_ATTR_CASTABLE_WHILE_MOUNTED))
+     {
+         if (m_caster->IsTaxiFlying())
+             return SPELL_FAILED_NOT_ON_TAXI; - else if(m_caster->GetVehicleGUID()) + else 
+if(m_caster->GetVehicleGUID() || m_caster->GetVehicle())
+         {
+             if(!(m_caster->m_movementInfo.GetVehicleSeatFlags() & SF_CAN_CAST))
+                 return SPELL_FAILED_NOT_MOUNTED; diff --git a/src/game/SpellAuras.cpp b/src/game/SpellAuras.cpp 
+index d81a166..8c61279 100644 --- a/src/game/SpellAuras.cpp +++ b/src/game/SpellAuras.cpp @@ -2665,7 +2665,7 @@ 
+void Aura::HandleAuraMounted(bool apply, bool Real)
+         if (minfo)
+             display_id = minfo->modelid;
+ 
+- target->Mount(display_id, GetId()); + target->Mount(display_id, GetId(), ci->VehicleEntry);
+     }
+     else
+     { @@ -3389,7 +3389,7 @@ void Aura::HandleModPossess(bool apply, bool Real)
+         {
+             ((Creature*)target)->AIM_Initialize();
+         }
+- else if(target->GetTypeId() == TYPEID_PLAYER && !target->GetVehicleGUID()) + else if(target->GetTypeId() == 
+TYPEID_PLAYER && !target->GetVehicle())
+         {
+             ((Player*)target)->SetClientControl(target, 0);
+         }
+@@ -3422,7 +3422,7 @@ void Aura::HandleModPossess(bool apply, bool Real)
+ 
+         target->SetCharmerGUID(0);
+ 
+- if(target->GetTypeId() == TYPEID_PLAYER && !target->GetVehicleGUID()) + if(target->GetTypeId() == 
+TYPEID_PLAYER && !target->GetVehicle())
+         {
+             ((Player*)target)->setFactionForRace(target->getRace());
+             ((Player*)target)->SetClientControl(target, 1); diff --git a/src/game/SpellHandler.cpp 
+b/src/game/SpellHandler.cpp index ef7cda3..c1589f0 100644 --- a/src/game/SpellHandler.cpp +++ 
+b/src/game/SpellHandler.cpp @@ -602,6 +602,9 @@ void WorldSession::HandleSpellClick( WorldPacket & recv_data )
+         if(!unit->isAlive())
+             return;
+ 
++ if(_player->GetVehicle()) + return; +
+         if(_player->GetVehicleGUID())
+             return;
+ 
+diff --git a/src/game/Traveller.h b/src/game/Traveller.h index 89688d2..80f03bc 100644 --- 
+a/src/game/Traveller.h +++ b/src/game/Traveller.h @@ -83,7 +83,7 @@ inline float Traveller<Creature>::Speed()
+ template<>
+ inline void Traveller<Creature>::Relocation(float x, float y, float z, float orientation)
+ { - i_traveller.GetMap()->CreatureRelocation(&i_traveller, x, y, z, orientation); + i_traveller.SetPosition(x, 
+y, z, orientation);
+ }
+ 
+ template<> @@ -140,7 +140,7 @@ inline float Traveller<Player>::GetMoveDestinationTo(float x, float y, float z)
+ template<>
+ inline void Traveller<Player>::Relocation(float x, float y, float z, float orientation)
+ { - i_traveller.GetMap()->PlayerRelocation(&i_traveller, x, y, z, orientation); + i_traveller.SetPosition(x, y, 
+z, orientation);
+ }
+ 
+ template<> diff --git a/src/game/Unit.cpp b/src/game/Unit.cpp index e541833..9ec4041 100644 --- 
+a/src/game/Unit.cpp +++ b/src/game/Unit.cpp @@ -245,7 +245,10 @@ Unit::Unit()
+         m_reactiveTimer[i] = 0;
+ 
+     m_auraUpdateMask = 0; +
+     m_vehicleGUID = 0; + m_vehicle = NULL; + m_vehicleKit = NULL;
+ }
+ 
+ Unit::~Unit() @@ -260,6 +263,9 @@ Unit::~Unit()
+         }
+     }
+ 
++ if(m_vehicleKit) + delete m_vehicleKit; +
+     if (m_charmInfo)
+         delete m_charmInfo;
+ 
+@@ -411,6 +417,65 @@ void Unit::SendMonsterMoveWithSpeed(float x, float y, float z, uint32 transitTim
+     SendMonsterMove(x, y, z, SPLINETYPE_NORMAL, flags, transitTime, player);
+ }
+ 
++void Unit::SendMonsterMoveTransport(Unit *vehicle) +{ + WorldPacket data(SMSG_MONSTER_MOVE_TRANSPORT, 
+8+8+1+1+4*3+4+1+4+4+4+4+4*3); + data << GetPackGUID(); + data << vehicle->GetPackGUID(); + data << 
+uint8(m_movementInfo.GetTransportSeat()); + data << uint8(0); // new in 3.1 + data << 
+float(vehicle->GetPositionX()); + data << float(vehicle->GetPositionY()); + data << 
+float(vehicle->GetPositionZ()); + data << uint32(getMSTime()); + + data << uint8(4); // unknown + data << 
+float(0); // facing angle + + data << uint32(/*SPLINEFLAG_UNKNOWN5*/0); + + data << uint32(0); // Time in 
+between points + data << uint32(1); // 1 single waypoint + + data << float(m_movementInfo.GetTransportPos()->x); 
++ data << float(m_movementInfo.GetTransportPos()->y); + data << float(m_movementInfo.GetTransportPos()->z); + + 
+SendMessageToSet(&data, true); +} + +bool Unit::SetPosition(float x, float y, float z, float orientation, bool 
+teleport) +{ + // prevent crash when a bad coord is sent by the client + if (!MaNGOS::IsValidMapCoord(x, y, z, 
+orientation)) + { + DEBUG_LOG("Unit::SetPosition(%f, %f, %f, %f, %d) .. bad coordinates for unit %d!", x, y, z, 
+orientation, teleport, GetGUIDLow()); + return false; + } + + bool turn = GetOrientation() != orientation; + 
+bool relocate = (teleport || GetPositionX() != x || GetPositionY() != y || GetPositionZ() != z); + + if (turn) + 
+RemoveAurasWithInterruptFlags(AURA_INTERRUPT_FLAG_TURNING); + + if (relocate) + { + 
+RemoveAurasWithInterruptFlags(AURA_INTERRUPT_FLAG_MOVE); + if (GetTypeId() == TYPEID_PLAYER) + 
+GetMap()->PlayerRelocation((Player*)this, x, y, z, orientation); + else + 
+GetMap()->CreatureRelocation((Creature*)this, x, y, z, orientation); + } + else if (turn) + 
+SetOrientation(orientation); + + if ((relocate || turn) && GetVehicleKit()) + 
+GetVehicleKit()->RelocatePassengers(x, y, z, orientation); + + return relocate || turn; +} +
+ void Unit::BuildHeartBeatMsg(WorldPacket *data) const
+ {
+     data->Initialize(MSG_MOVE_HEARTBEAT); @@ -7390,7 +7455,7 @@ float Unit::GetPPMProcChance(uint32 
+WeaponSpeed, float PPM) const
+     return WeaponSpeed * PPM / 600.0f; // result is chance in percents (probability = Speed_in_sec * (PPM / 
+60))
+ }
+ 
+-void Unit::Mount(uint32 mount, uint32 spellId) +void Unit::Mount(uint32 mount, uint32 spellId, uint32 
+vehicleEntry)
+ {
+     if (!mount)
+         return; @@ -7422,6 +7487,21 @@ void Unit::Mount(uint32 mount, uint32 spellId)
+             }
+         }
+     }
++ + if (vehicleEntry) + { + if (CreateVehicleKit(vehicleEntry)) + { + GetVehicleKit()->Reset(); + WorldPacket 
+data(SMSG_PLAYER_VEHICLE_DATA, 8+4); + data << GetPackGUID(); + data << uint32(vehicleEntry); + 
+SendMessageToSet(&data, true); + + data.Initialize(SMSG_ON_CANCEL_EXPECTED_RIDE_VEHICLE_AURA, 0); + 
+((Player*)this)->GetSession()->SendPacket(&data); + } + }
+ }
+ 
+ void Unit::Unmount() @@ -7444,6 +7524,17 @@ void Unit::Unmount()
+         else
+             ((Player*)this)->ResummonPetTemporaryUnSummonedIfAny();
+     }
++ + if (GetTypeId() == TYPEID_PLAYER && GetVehicleKit()) + { + // Send other players that we are no longer a 
+vehicle + WorldPacket data(SMSG_PLAYER_VEHICLE_DATA, 8+4); + data << GetPackGUID(); + data << uint32(0); + 
+((Player*)this)->SendMessageToSet(&data, true); + + RemoveVehicleKit(); + }
+ }
+ 
+ void Unit::SetInCombatWith(Unit* enemy) @@ -8220,6 +8311,8 @@ void Unit::setDeathState(DeathState s)
+ 
+         if(IsNonMeleeSpellCasted(false))
+             InterruptNonMeleeSpells(false); + + ExitVehicle();
+     }
+ 
+     if (s == JUST_DIED) @@ -8238,6 +8331,9 @@ void Unit::setDeathState(DeathState s)
+         // remove aurastates allowing special moves
+         ClearAllReactives();
+         ClearDiminishings(); + + if (GetVehicleKit()) + GetVehicleKit()->RemoveAllPassengers();
+     }
+     else if(s == JUST_ALIVED)
+     { @@ -9122,6 +9218,7 @@ void Unit::RemoveFromWorld()
+         RemoveGuardians();
+         RemoveAllGameObjects();
+         RemoveAllDynObjects(); + ExitVehicle();
+         CleanupDeletedAuras();
+         GetViewPoint().Event_RemovedFromWorld();
+     }
+@@ -10248,7 +10345,7 @@ void Unit::NearTeleportTo( float x, float y, float z, float orientation, bool ca
+             if (MovementGenerator *movgen = c->GetMotionMaster()->top())
+                 movgen->Interrupt(*c);
+ 
+- GetMap()->CreatureRelocation((Creature*)this, x, y, z, orientation); + SetPosition(x, y, z, orientation, 
+true);
+ 
+         WorldPacket data;
+         BuildHeartBeatMsg(&data); @@ -10333,103 +10430,6 @@ void Unit::ChangeSeat(int8 seatId, bool next)
+     EnterVehicle(m_vehicle, seatId);
+ }
+ 
+-void Unit::EnterVehicle(Vehicle *vehicle, int8 seat_id, bool force) -{ - // dont allow multiple vehicles - 
+ExitVehicle(); - - RemoveSpellsCausingAura(SPELL_AURA_MOUNTED); - // NOTE : shapeshift too? - - Vehicle *v = 
+vehicle->FindFreeSeat(&seat_id, force); - if(!v) - return; - - VehicleEntry const *ve = 
+sVehicleStore.LookupEntry(v->GetVehicleId()); - if(!ve) - return; - - VehicleSeatEntry const *veSeat = 
+sVehicleSeatStore.LookupEntry(ve->m_seatID[seat_id]); - if(!veSeat) - return; - - 
+m_movementInfo.SetTransportData(v->GetGUID(), - (veSeat->m_attachmentOffsetX + v->GetObjectBoundingRadius()) * 
+GetFloatValue(OBJECT_FIELD_SCALE_X), - (veSeat->m_attachmentOffsetY + v->GetObjectBoundingRadius()) * 
+GetFloatValue(OBJECT_FIELD_SCALE_X), - (veSeat->m_attachmentOffsetZ + v->GetObjectBoundingRadius()) * 
+GetFloatValue(OBJECT_FIELD_SCALE_X), - veSeat->m_passengerYaw, v->GetCreationTime(), seat_id, veSeat->m_ID, - 
+sObjectMgr.GetSeatFlags(veSeat->m_ID), v->GetVehicleFlags()); - - 
+m_movementInfo.AddMovementFlag(MOVEFLAG_ONTRANSPORT); - - addUnitState(UNIT_STAT_ON_VEHICLE); - 
+InterruptNonMeleeSpells(false); - - if(Pet *pet = GetPet()) - pet->Remove(PET_SAVE_AS_CURRENT); - - 
+if(GetTypeId() == TYPEID_PLAYER) - ((Player*)this)->SendEnterVehicle(v); - - WorldPacket 
+data(SMSG_MONSTER_MOVE_TRANSPORT, 60); - data << GetPackGUID(); - data << v->GetPackGUID(); - data << 
+uint8(seat_id); - data << uint8(0); // new in 3.1 - data << v->GetPositionX() << v->GetPositionY() << 
+v->GetPositionZ(); - data << uint32(getMSTime()); - - data << uint8(4); // unknown - data << float(0); // facing 
+angle - - data << uint32(SPLINEFLAG_UNKNOWN5); - - data << uint32(0); // Time in between points - data << 
+uint32(1); // 1 single waypoint - data << m_movementInfo.GetTransportPos()->x; - data << 
+m_movementInfo.GetTransportPos()->y; - data << m_movementInfo.GetTransportPos()->z; - SendMessageToSet(&data, 
+true); - - v->AddPassenger(this, seat_id, force); -} - -void Unit::ExitVehicle() -{ - if(uint64 vehicleGUID = 
+GetVehicleGUID()) - { - float v_size = 0.0f; - if(Vehicle *vehicle = ObjectAccessor::GetVehicle(vehicleGUID)) - 
+{ - if(m_movementInfo.GetVehicleSeatFlags() & SF_MAIN_RIDER) - { - if(vehicle->GetVehicleFlags() & 
+VF_DESPAWN_AT_LEAVE) - { - // will be deleted at next update - vehicle->SetSpawnDuration(1); - } - } - v_size = 
+vehicle->GetObjectBoundingRadius(); - vehicle->RemovePassenger(this); - } - SetVehicleGUID(0); - - 
+clearUnitState(UNIT_STAT_ON_VEHICLE); - - if(GetTypeId() == TYPEID_PLAYER) - { - 
+((Player*)this)->ResummonPetTemporaryUnSummonedIfAny(); - 
+((Player*)this)->m_movementInfo.RemoveMovementFlag(MOVEFLAG_ROOT); - } - - float x = GetPositionX(); - float y = 
+GetPositionY(); - float z = GetPositionZ() + 2.0f; - GetClosePoint(x, y, z, 2.0f + v_size); - SendMonsterMove(x, 
+y, z, SPLINETYPE_NORMAL, SPLINEFLAG_WALKMODE, 0); - } -} -
+ void Unit::SetPvP( bool state )
+ {
+     if(state) @@ -10631,6 +10631,192 @@ void Unit::CleanupDeletedAuras()
+     m_deletedAuras.clear();
+ }
+ 
++Unit* Unit::GetVehicleBase() +{ + return m_vehicle ? m_vehicle->GetBase() : NULL; +} + +bool 
+Unit::CreateVehicleKit(uint32 vehicleEntry) +{ + VehicleEntry const *vehInfo = 
+sVehicleStore.LookupEntry(vehicleEntry); + + if (!vehInfo) + return false; + + m_vehicleKit = new 
+VehicleKit(this, vehInfo); + m_updateFlag |= UPDATEFLAG_VEHICLE; + return true; +} + +void 
+Unit::RemoveVehicleKit() +{ + if (!m_vehicleKit) + return; + + m_vehicleKit->RemoveAllPassengers(); + delete 
+m_vehicleKit; + + m_vehicleKit = NULL; + + m_updateFlag &= ~UPDATEFLAG_VEHICLE; + RemoveFlag(UNIT_NPC_FLAGS, 
+UNIT_NPC_FLAG_SPELLCLICK); + RemoveFlag(UNIT_NPC_FLAGS, UNIT_NPC_FLAG_PLAYER_VEHICLE); +} + +void 
+Unit::EnterVehicle(VehicleKit *vehicle, int8 seatId) +{ + if(!isAlive() || GetVehicleKit() == vehicle) + return; 
++ + if (m_vehicle) + { + if (m_vehicle == vehicle) + { + if (seatId >= 0) + ChangeSeat(seatId); + + return; + } 
++ else + ExitVehicle(); + } + + InterruptNonMeleeSpells(false); + RemoveSpellsCausingAura(SPELL_AURA_MOUNTED); + 
++ if (!vehicle->AddPassenger(this, seatId)) + return; + + m_vehicle = vehicle; + + if (Pet *pet = GetPet()) + 
+pet->Remove(PET_SAVE_AS_CURRENT); + + if (GetTypeId() == TYPEID_PLAYER) + { + Player* player = (Player*)this; + 
++ if (BattleGround *bg = player->GetBattleGround()) + bg->EventPlayerDroppedFlag(player); + + WorldPacket 
+data(SMSG_BREAK_TARGET, 8); + data << vehicle->GetBase()->GetPackGUID(); + 
+player->GetSession()->SendPacket(&data); + } +} + +void Unit::EnterVehicle(Vehicle *vehicle, int8 seat_id, bool 
+force) +{ + ExitVehicle(); + + RemoveSpellsCausingAura(SPELL_AURA_MOUNTED); + + Vehicle *v = 
+vehicle->FindFreeSeat(&seat_id, force); + if(!v) + return; + + VehicleEntry const *ve = 
+sVehicleStore.LookupEntry(v->GetVehicleId()); + if(!ve) + return; + + VehicleSeatEntry const *veSeat = 
+sVehicleSeatStore.LookupEntry(ve->m_seatID[seat_id]); + if(!veSeat) + return; + + 
+m_movementInfo.SetTransportData(v->GetGUID(), + (veSeat->m_attachmentOffsetX + v->GetObjectBoundingRadius()) * 
+GetFloatValue(OBJECT_FIELD_SCALE_X), + (veSeat->m_attachmentOffsetY + v->GetObjectBoundingRadius()) * 
+GetFloatValue(OBJECT_FIELD_SCALE_X), + (veSeat->m_attachmentOffsetZ + v->GetObjectBoundingRadius()) * 
+GetFloatValue(OBJECT_FIELD_SCALE_X), + veSeat->m_passengerYaw, v->GetCreationTime(), seat_id, NULL, 
+v->GetVehicleFlags()); + + addUnitState(UNIT_STAT_ON_VEHICLE); + InterruptNonMeleeSpells(false); + + if(Pet *pet 
+= GetPet()) + pet->Remove(PET_SAVE_AS_CURRENT); + + if(GetTypeId() == TYPEID_PLAYER) + 
+((Player*)this)->SendEnterVehicle(v); + + WorldPacket data(SMSG_MONSTER_MOVE_TRANSPORT, 60); + data << 
+GetPackGUID(); + data << v->GetPackGUID(); + data << uint8(seat_id); + data << uint8(0); + data << 
+v->GetPositionX() << v->GetPositionY() << v->GetPositionZ(); + data << uint32(getMSTime()); + + data << 
+uint8(4); + data << float(0); + + data << uint32(SPLINEFLAG_UNKNOWN5); + + data << uint32(0); + data << 
+uint32(1); + data << m_movementInfo.GetTransportPos()->x; + data << m_movementInfo.GetTransportPos()->y; + data 
+<< m_movementInfo.GetTransportPos()->z; + SendMessageToSet(&data, true); + + v->AddPassenger(this, seat_id, 
+force); +} + +void Unit::ExitVehicle() +{ + if(uint64 vehicleGUID = GetVehicleGUID()) + { + float v_size = 0.0f; 
++ if(Vehicle *vehicle = ObjectAccessor::GetVehicle(vehicleGUID)) + { + if(m_movementInfo.GetVehicleSeatFlags() & 
+SF_MAIN_RIDER) + { + if(vehicle->GetVehicleFlags() & VF_DESPAWN_AT_LEAVE) + { + vehicle->SetSpawnDuration(1); + 
+}
++ } + v_size = vehicle->GetObjectBoundingRadius(); + vehicle->RemovePassenger(this); + } + SetVehicleGUID(0); + 
++ clearUnitState(UNIT_STAT_ON_VEHICLE); + + if(GetTypeId() == TYPEID_PLAYER) + { + 
+((Player*)this)->ResummonPetTemporaryUnSummonedIfAny(); + 
+((Player*)this)->m_movementInfo.RemoveMovementFlag(MOVEFLAG_ROOT); + } + + float x = GetPositionX(); + float y = 
+GetPositionY(); + float z = GetPositionZ() + 2.0f; + GetClosePoint(x, y, z, 2.0f + v_size); + SendMonsterMove(x, 
+y, z, SPLINETYPE_NORMAL, SPLINEFLAG_WALKMODE, 0); + } + else + { + if(!m_vehicle) + return; + + Unit* 
+pVehicleBase = m_vehicle->GetBase(); + + float angle = pVehicleBase->GetOrientation(); + + 
+m_vehicle->RemovePassenger(this); + m_vehicle = NULL; + + if (GetTypeId() == TYPEID_PLAYER) + 
+((Player*)this)->ResummonPetTemporaryUnSummonedIfAny(); + + float x = GetPositionX(); + float y = 
+GetPositionY(); + float z = GetPositionZ() + 2.0f; + GetClosePoint(x, y, z, 2.0f); + SendMonsterMove(x, y, z, 
+SPLINETYPE_NORMAL, SPLINEFLAG_WALKMODE, 0); + } +} +
+ bool Unit::CheckAndIncreaseCastCounter()
+ {
+     uint32 maxCasts = sWorld.getConfig(CONFIG_UINT32_MAX_SPELL_CASTS_IN_CHAIN); diff --git a/src/game/Unit.h 
+b/src/game/Unit.h index ea5bfec..854e523 100644 --- a/src/game/Unit.h +++ b/src/game/Unit.h @@ -304,6 +304,7 @@ 
+class Pet;
+ class PetAura;
+ class Totem;
+ class Vehicle; +class VehicleKit;
+ 
+ struct SpellImmune
+ { @@ -616,6 +617,7 @@ enum NPCFlags
+     UNIT_NPC_FLAG_STABLEMASTER = 0x00400000, // 100%
+     UNIT_NPC_FLAG_GUILD_BANKER = 0x00800000, // cause client to send 997 opcode
+     UNIT_NPC_FLAG_SPELLCLICK = 0x01000000, // cause client to send 1015 opcode (spell click), dynamic, set at 
+loading and don't must be set in DB + UNIT_NPC_FLAG_PLAYER_VEHICLE = 0x02000000, // players with mounts that 
+have vehicle data should have it set
+     UNIT_NPC_FLAG_GUARD = 0x10000000 // custom flag for guards
+ };
+ 
+@@ -752,7 +754,7 @@ class MovementInfo
+ {
+     public:
+         MovementInfo() : moveFlags(MOVEFLAG_NONE), moveFlags2(MOVEFLAG2_NONE), time(0), - t_time(0), 
+t_seat(-1), t_time2(0), s_pitch(0.0f), fallTime(0), j_velocity(0.0f), j_sinAngle(0.0f), + t_time(0), t_seat(-1), 
+t_seatInfo(NULL), t_time2(0), s_pitch(0.0f), fallTime(0), j_velocity(0.0f), j_sinAngle(0.0f),
+             j_cosAngle(0.0f), j_xyspeed(0.0f), u_unk1(0.0f) {}
+ 
+         // Read/Write methods @@ -769,7 +771,7 @@ class MovementInfo
+ 
+         // Position manipulations
+         Position const *GetPos() const { return &pos; } - void SetTransportData(ObjectGuid guid, float x, float 
+y, float z, float o, uint32 time, int8 seat, uint32 dbc_seat = 0, uint32 seat_flags = 0, uint32 vehicle_flags = 
+0) + void SetTransportData(ObjectGuid guid, float x, float y, float z, float o, uint32 time, int8 seat, 
+VehicleSeatEntry const* seatInfo = NULL, uint32 vehicle_flags = 0)
+         {
+             t_guid = guid;
+             t_pos.x = x; @@ -778,8 +780,7 @@ class MovementInfo
+             t_pos.o = o;
+             t_time = time;
+             t_seat = seat; - t_dbc_seat = dbc_seat; - t_seat_flags = seat_flags; + t_seatInfo = seatInfo;
+             t_vehicle_flags = vehicle_flags;
+         }
+         void ClearTransportData() @@ -791,16 +792,15 @@ class MovementInfo
+             t_pos.o = 0.0f;
+             t_time = 0;
+             t_seat = -1; - t_dbc_seat = 0; - t_seat_flags = 0; + t_seatInfo = NULL;
+             t_vehicle_flags = 0;
+         }
+         ObjectGuid const& GetTransportGuid() const { return t_guid; }
+         Position const *GetTransportPos() const { return &t_pos; }
+         int8 GetTransportSeat() const { return t_seat; }
+         uint32 GetTransportTime() const { return t_time; } - uint32 GetTransportDBCSeat() const { return 
+t_dbc_seat; } - uint32 GetVehicleSeatFlags() const { return t_seat_flags; } + int32 GetTransportDBCSeat() const 
+{ return t_seatInfo ? t_seatInfo->m_ID : 0; } + uint32 GetVehicleSeatFlags() const { return t_seatInfo ? 
+t_seatInfo->m_flags : 0; }
+         uint32 GetVehicleFlags() const { return t_vehicle_flags; }
+         uint32 GetFallTime() const { return fallTime; }
+         void ChangePosition(float x, float y, float z, float o) { pos.x = x; pos.y = y; pos.z = z; pos.o = o; } 
+@@ -817,9 +817,8 @@ class MovementInfo
+         Position t_pos;
+         uint32 t_time;
+         int8 t_seat; + VehicleSeatEntry const* t_seatInfo;
+         uint32 t_time2; - uint32 t_dbc_seat; - uint32 t_seat_flags;
+         uint32 t_vehicle_flags;
+         // swimming and flying
+         float s_pitch; @@ -1283,7 +1282,7 @@ class MANGOS_DLL_SPEC Unit : public WorldObject
+ 
+         bool IsMounted() const { return HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_MOUNT ); }
+         uint32 GetMountID() const { return GetUInt32Value(UNIT_FIELD_MOUNTDISPLAYID); } - void Mount(uint32 
+mount, uint32 spellId = 0); + void Mount(uint32 mount, uint32 spellId = 0, uint32 vehicleEntry = 0);
+         void Unmount();
+ 
+         uint16 GetMaxSkillValueForLevel(Unit const* target = NULL) const { return (target ? 
+getLevelForTarget(target) : getLevel()) * 5; } @@ -1450,6 +1449,9 @@ class MANGOS_DLL_SPEC Unit : public 
+WorldObject
+ 
+         template<typename PathElem, typename PathNode>
+         void SendMonsterMoveByPath(Path<PathElem,PathNode> const& path, uint32 start, uint32 end, SplineFlags 
+flags); + void SendMonsterMoveTransport(Unit *vehicle); + + virtual bool SetPosition(float x, float y, float z, 
+float orientation, bool teleport = false);
+ 
+         void SendHighestThreatUpdate(HostileReference* pHostileReference);
+         void SendThreatClear(); @@ -1911,11 +1913,17 @@ class MANGOS_DLL_SPEC Unit : public WorldObject
+         MovementInfo m_movementInfo;
+ 
+          // vehicle system + void EnterVehicle(VehicleKit *vehicle, int8 seatId = -1);
+          void EnterVehicle(Vehicle *vehicle, int8 seat_id, bool force = false);
+          void ExitVehicle(); + void ChangeSeat(int8 seatId, bool next = true);
+          uint64 GetVehicleGUID() { return m_vehicleGUID; }
+          void SetVehicleGUID(uint64 guid) { m_vehicleGUID = guid; } - void ChangeSeat(int8 seatId, bool next); 
++ VehicleKit* GetVehicle() { return m_vehicle; } + VehicleKit* GetVehicleKit() { return m_vehicleKit; } + Unit* 
+GetVehicleBase(); + bool CreateVehicleKit(uint32 vehicleEntry); + void RemoveVehicleKit();
+ 
+     protected:
+         explicit Unit (); @@ -1966,7 +1974,10 @@ class MANGOS_DLL_SPEC Unit : public WorldObject
+         uint32 m_regenTimer;
+         uint32 m_lastManaUseTimer;
+         uint64 m_auraUpdateMask; +
+         uint64 m_vehicleGUID; + VehicleKit* m_vehicle; + VehicleKit* m_vehicleKit;
+ 
+     private:
+         void CleanupDeletedAuras(); diff --git a/src/game/Vehicle.cpp b/src/game/Vehicle.cpp index 
+a0df6ab..3fc4aef 100644 --- a/src/game/Vehicle.cpp +++ b/src/game/Vehicle.cpp @@ -22,8 +22,233 @@
+ #include "Unit.h" include "Util.h" include "WorldPacket.h"
++#include "Transports.h"
+ #include "InstanceData.h"
+ 
++VehicleKit::VehicleKit(Unit* base, VehicleEntry const* vehicleInfo) : m_vehicleInfo(vehicleInfo), 
+m_pBase(base), m_uiNumFreeSeats(0) +{ + for (uint32 i = 0; i < MAX_VEHICLE_SEAT; ++i) + { + uint32 seatId = 
+m_vehicleInfo->m_seatID[i]; + + if (!seatId) + continue; + + if (VehicleSeatEntry const *veSeat = 
+sVehicleSeatStore.LookupEntry(seatId)) + { + m_Seats.insert(std::make_pair(i, VehicleSeat(veSeat))); + + if 
+(veSeat->IsUsable()) + ++m_uiNumFreeSeats; + } + } +} + +VehicleKit::~VehicleKit() +{ + +} + +void 
+VehicleKit::RemoveAllPassengers() +{ + for (SeatMap::iterator itr = m_Seats.begin(); itr != m_Seats.end(); 
+++itr) + { + if (Unit *passenger = itr->second.passenger) + passenger->ExitVehicle(); + } +} + +bool 
+VehicleKit::HasEmptySeat(int8 seatId) const +{ + SeatMap::const_iterator seat = m_Seats.find(seatId); + + if 
+(seat == m_Seats.end()) + return false; + + return !seat->second.passenger; +} + +Unit 
+*VehicleKit::GetPassenger(int8 seatId) const +{ + SeatMap::const_iterator seat = m_Seats.find(seatId); + + if 
+(seat == m_Seats.end()) + return NULL; + + return seat->second.passenger; +} + +int8 
+VehicleKit::GetNextEmptySeat(int8 seatId, bool next) const +{ + SeatMap::const_iterator seat = 
+m_Seats.find(seatId); + + if (seat == m_Seats.end()) + return -1; + + while (seat->second.passenger || 
+!seat->second.seatInfo->IsUsable()) + { + if (next) + { + ++seat; + if (seat == m_Seats.end()) + seat = 
+m_Seats.begin(); + } + else + { + if (seat == m_Seats.begin()) + seat = m_Seats.end(); + --seat; + } + + if 
+(seat->first == seatId) + return -1; // no available seat + } + + return seat->first; +} + +bool 
+VehicleKit::AddPassenger(Unit *unit, int8 seatId) +{ + SeatMap::iterator seat; + + if (seatId < 0) // no 
+specific seat requirement + { + for (seat = m_Seats.begin(); seat != m_Seats.end(); ++seat) + { + if 
+(!seat->second.passenger && seat->second.seatInfo->IsUsable()) + break; + } + + if (seat == m_Seats.end()) // no 
+available seat + return false; + } + else + { + seat = m_Seats.find(seatId); + + if (seat == m_Seats.end()) + 
+return false; + + if (seat->second.passenger) + seat->second.passenger->ExitVehicle(); + } + + 
+seat->second.passenger = unit; + + if (seat->second.seatInfo->IsUsable()) + { + ASSERT(m_uiNumFreeSeats); + 
+--m_uiNumFreeSeats; + + if (!m_uiNumFreeSeats) + { + if (m_pBase->GetTypeId() == TYPEID_PLAYER) + 
+m_pBase->RemoveFlag(UNIT_NPC_FLAGS, UNIT_NPC_FLAG_PLAYER_VEHICLE); + else + m_pBase->RemoveFlag(UNIT_NPC_FLAGS, 
+UNIT_NPC_FLAG_SPELLCLICK); + } + } + + unit->addUnitState(UNIT_STAT_ON_VEHICLE); + + VehicleSeatEntry const 
+*veSeat = seat->second.seatInfo; + + unit->m_movementInfo.AddMovementFlag(MOVEFLAG_ONTRANSPORT); + 
+unit->m_movementInfo.SetTransportData(m_pBase->GetGUID(), + veSeat->m_attachmentOffsetX, 
+veSeat->m_attachmentOffsetY, veSeat->m_attachmentOffsetZ, + veSeat->m_passengerYaw, getMSTime(), seat->first, 
+veSeat); + + if (unit->GetTypeId() == TYPEID_PLAYER) + { + //((Player*)unit)->GetCamera().SetView(m_pBase); + + 
+WorldPacket data(SMSG_FORCE_MOVE_ROOT, 8+4); + data << unit->GetPackGUID(); + data << 
+uint32((unit->m_movementInfo.GetVehicleSeatFlags() & SEAT_FLAG_CAN_CAST) ? 2 : 0); + 
+unit->SendMessageToSet(&data, true); + } + + unit->SendMonsterMoveTransport(m_pBase); + + if 
+(m_pBase->GetTypeId() == TYPEID_UNIT) + RelocatePassengers(m_pBase->GetPositionX(), m_pBase->GetPositionY(), 
+m_pBase->GetPositionZ(), m_pBase->GetOrientation()); + + return true; +} + +void 
+VehicleKit::RemovePassenger(Unit *unit) +{ + SeatMap::iterator seat; + for (seat = m_Seats.begin(); seat != 
+m_Seats.end(); ++seat) + { + if (seat->second.passenger == unit) + break; + } + + if (seat == m_Seats.end()) + 
+return; + + seat->second.passenger = NULL; + + if (seat->second.seatInfo->IsUsable()) + { + if 
+(!m_uiNumFreeSeats) + { + if (m_pBase->GetTypeId() == TYPEID_PLAYER) + m_pBase->SetFlag(UNIT_NPC_FLAGS, 
+UNIT_NPC_FLAG_PLAYER_VEHICLE); + else + m_pBase->SetFlag(UNIT_NPC_FLAGS, UNIT_NPC_FLAG_SPELLCLICK); + } + + 
+++m_uiNumFreeSeats; + } + + unit->clearUnitState(UNIT_STAT_ON_VEHICLE); + + 
+unit->m_movementInfo.ClearTransportData(); + unit->m_movementInfo.RemoveMovementFlag(MOVEFLAG_ONTRANSPORT); + + 
+if (unit->GetTypeId() == TYPEID_PLAYER) + { + //((Player*)unit)->GetCamera().ResetView(); + + WorldPacket 
+data(SMSG_FORCE_MOVE_UNROOT, 8+4); + data << unit->GetPackGUID(); + data << uint32(0); + 
+unit->SendMessageToSet(&data, true); + } +} + +void VehicleKit::Reset() +{ + if (m_pBase->GetTypeId() == 
+TYPEID_PLAYER) + { + if (m_uiNumFreeSeats) + m_pBase->SetFlag(UNIT_NPC_FLAGS, UNIT_NPC_FLAG_PLAYER_VEHICLE); + } 
++ else + { + if (m_uiNumFreeSeats) + m_pBase->SetFlag(UNIT_NPC_FLAGS, UNIT_NPC_FLAG_SPELLCLICK); + } +} + +void 
+VehicleKit::RelocatePassengers(float x, float y, float z, float ang) +{ + for (SeatMap::const_iterator itr = 
+m_Seats.begin(); itr != m_Seats.end(); ++itr) + { + if (Unit *passenger = itr->second.passenger) + { + float px 
+= x + passenger->m_movementInfo.GetTransportPos()->x; + float py = y + 
+passenger->m_movementInfo.GetTransportPos()->y; + float pz = z + passenger->m_movementInfo.GetTransportPos()->z; 
++ float po = ang + passenger->m_movementInfo.GetTransportPos()->o; + + passenger->SetPosition(px, py, pz, po); + 
+}
++ } +} +
+ Vehicle::Vehicle() : Creature(CREATURE_SUBTYPE_VEHICLE), m_vehicleId(0), m_vehicleInfo(NULL), 
+m_spawnduration(0),
+                      despawn(false), m_creation_time(0), m_VehicleData(NULL)
+ { diff --git a/src/game/Vehicle.h b/src/game/Vehicle.h index 7252bad..355245d 100644 --- a/src/game/Vehicle.h 
++++ b/src/game/Vehicle.h @@ -26,19 +26,43 @@
+ 
+ struct VehicleSeat
+ { + VehicleSeat(VehicleSeatEntry const *pSeatInfo = NULL) : seatInfo(pSeatInfo), passenger(NULL) {} +
+     VehicleSeatEntry const *seatInfo;
+     Unit* passenger;
+     uint8 flags;
+     uint32 vs_flags;
+ };
+ 
+-enum VehicleSeatFlags +typedef std::map<int8, VehicleSeat> SeatMap; + +class VehicleKit
+ { - SEAT_FREE = 0x01, // free seat - SEAT_FULL = 0x02, // seat occupied by player/creature - // special cases - 
+SEAT_VEHICLE_FREE = 0x04, // seat occupied by vehicle, but that vehicle is free - SEAT_VEHICLE_FULL = 0x08 // 
+seat occupied by vehicle and that vehicle is full too + public: + + explicit VehicleKit(Unit* base, VehicleEntry 
+const* vehicleInfo); + ~VehicleKit(); + + void Reset(); + + bool HasEmptySeat(int8 seatId) const; + Unit 
+*GetPassenger(int8 seatId) const; + int8 GetNextEmptySeat(int8 seatId, bool next) const; + bool 
+AddPassenger(Unit *passenger, int8 seatId = -1); + void RemovePassenger(Unit *passenger); + void 
+RelocatePassengers(float x, float y, float z, float ang); + void RemoveAllPassengers(); + + uint32 
+GetVehicleId() const { return m_vehicleInfo->m_ID; } + VehicleEntry const* GetVehicleInfo() const { return 
+m_vehicleInfo; } + Unit* GetBase() { return m_pBase; } + + private: + + SeatMap m_Seats; + uint32 
+m_uiNumFreeSeats; + VehicleEntry const *m_vehicleInfo; + Unit* m_pBase;
+ };
+ 
+ enum PowerType diff --git a/src/game/WorldSession.h b/src/game/WorldSession.h index 43b1cb9..cc10fe0 100644 --- 
+a/src/game/WorldSession.h +++ b/src/game/WorldSession.h @@ -429,8 +429,12 @@ class MANGOS_DLL_SPEC WorldSession
+         void HandleMoveNotActiveMover(WorldPacket &recv_data);
+         void HandleDismissControlledVehicle(WorldPacket &recv_data);
+         void HandleRequestVehicleExit(WorldPacket &recv_data); + void HandleRequestVehiclePrevSeat(WorldPacket 
+&recv_data); + void HandleRequestVehicleNextSeat(WorldPacket &recv_data);
+         void HandleRequestVehicleSwitchSeat(WorldPacket &recv_data);
+         void HandleChangeSeatsOnControlledVehicle(WorldPacket &recv_data); + void 
+HandleEnterPlayerVehicle(WorldPacket &recv_data); + void HandleEjectPasenger(WorldPacket &recv_data);
+         void HandleMoveTimeSkippedOpcode(WorldPacket &recv_data);
+ 
+         void HandleRequestRaidInfoOpcode( WorldPacket & recv_data ); diff --git 
+a/src/shared/Database/SQLStorage.cpp b/src/shared/Database/SQLStorage.cpp index 9b5600b..27745d6 100644 --- 
+a/src/shared/Database/SQLStorage.cpp +++ b/src/shared/Database/SQLStorage.cpp @@ -25,8 +25,8 @@ extern 
+DatabasePostgre WorldDatabase;
+ extern DatabaseMysql WorldDatabase;
+ #endif
+ 
+-const char 
+CreatureInfosrcfmt[]="iiiiiiiiiisssiiiiiiiiiiifffiffiifiiiiiiiiiiffiiiiiiiiiiiiiiiiiiisiiffliiiiiiiliiis"; 
+-const char 
+CreatureInfodstfmt[]="iiiiiiiiiisssiiiiiiiiiiifffiffiifiiiiiiiiiiffiiiiiiiiiiiiiiiiiiisiiffliiiiiiiliiii";
++const char CreatureInfosrcfmt[]="iiiiiiiiiisssiiiiiiiiiiifffiffiifiiiiiiiiiiffiiiiiiiiiiiiiiiiiiiisiiff

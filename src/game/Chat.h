@@ -419,6 +419,7 @@ class ChatHandler
         bool HandleReloadSpellElixirCommand(const char* args);
         bool HandleReloadSpellLearnSpellCommand(const char* args);
         bool HandleReloadSpellProcEventCommand(const char* args);
+        bool HandleReloadSpellStackCommand(const char* args); 
         bool HandleReloadSpellProcItemEnchantCommand(const char* args);
         bool HandleReloadSpellBonusesCommand(const char* args);
         bool HandleReloadSpellScriptTargetCommand(const char* args);
@@ -426,6 +427,8 @@ class ChatHandler
         bool HandleReloadSpellTargetPositionCommand(const char* args);
         bool HandleReloadSpellThreatsCommand(const char* args);
         bool HandleReloadSpellPetAurasCommand(const char* args);
+        bool HandleReloadVehicleDataCommand(const char* args);
+        bool HandleReloadVehicleSeatDataCommand(const char* args);
 
         bool HandleResetAchievementsCommand(const char * args);
         bool HandleResetAllCommand(const char * args);

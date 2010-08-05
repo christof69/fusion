@@ -23,6 +23,7 @@
 #ifndef __WORLD_H
 #define __WORLD_H
 
+#include <omp.h>
 #include "Common.h"
 #include "Timer.h"
 #include "Policies/Singleton.h"
@@ -182,6 +183,29 @@ enum eConfigUInt32Values
     CONFIG_UINT32_CHARDELETE_KEEP_DAYS,
     CONFIG_UINT32_CHARDELETE_METHOD,
     CONFIG_UINT32_CHARDELETE_MIN_LEVEL,
+    CONFIG_UINT32_HONORABLE_KILL,
+    CONFIG_UINT32_BONUS_HONOR_AB_WIN,
+    CONFIG_UINT32_BONUS_HONOR_AB_END,
+    CONFIG_UINT32_BONUS_HONOR_WSG_WIN,
+    CONFIG_UINT32_BONUS_HONOR_WSG_END,
+    CONFIG_UINT32_BONUS_HONOR_AV_WIN,
+    CONFIG_UINT32_BONUS_HONOR_AV_END,
+    CONFIG_UINT32_BONUS_HONOR_EOS_WIN,
+    CONFIG_UINT32_BONUS_HONOR_EOS_END,
+    CONFIG_UINT32_BONUS_HONOR_FLAG_WSG,
+    CONFIG_UINT32_BONUS_HONOR_FLAG_AB,
+    CONFIG_UINT32_BONUS_HONOR_FLAG_EOS,
+    CONFIG_UINT32_BONUS_HONOR_FLAG_AV,
+    CONFIG_UINT32_BONUS_HONOR_HOLIDAY,
+    CONFIG_UINT32_TEAM_BG_FACTION_BLUE,
+    CONFIG_UINT32_TEAM_BG_FACTION_RED,
+    CONFIG_UINT32_TEAM_BG_BUFF_BLUE,
+    CONFIG_UINT32_TEAM_BG_BUFF_RED,
+    CONFIG_UINT32_FACTIONED_MAP_FACTION,
+    CONFIG_UINT32_FACTIONED_MAP_TEAM,
+    CONFIG_UINT32_LOSERNOCHANGE,
+    CONFIG_UINT32_LOSERHALFCHANGE,
+    CONFIG_UINT32_NUMTHREADS,
     CONFIG_UINT32_VALUE_COUNT
 };
 
@@ -318,7 +342,16 @@ enum eConfigBoolValues
     CONFIG_BOOL_KICK_PLAYER_ON_BAD_PACKET,
     CONFIG_BOOL_STATS_SAVE_ONLY_ON_LOGOUT,
     CONFIG_BOOL_CLEAN_CHARACTER_DB,
+<<<<<<< HEAD:src/game/World.h
     CONFIG_BOOL_VMAP_INDOOR_CHECK,
+=======
+    CONFIG_BOOL_END_ARENA_IF_NOT_ENOUGH_PLAYERS,
+    CONFIG_BOOL_TEAM_BG_ALLOW_AB,
+    CONFIG_BOOL_TEAM_BG_ALLOW_AV,
+    CONFIG_BOOL_TEAM_BG_ALLOW_EOS,
+    CONFIG_BOOL_TEAM_BG_ALLOW_WSG,
+    CONFIG_BOOL_FACTIONED_MAP_ENABLED,
+>>>>>>> vehicule:src/game/World.h
     CONFIG_BOOL_VALUE_COUNT
 };
 
@@ -504,6 +537,8 @@ class World
         time_t const& GetGameTime() const { return m_gameTime; }
         /// Uptime (in secs)
         uint32 GetUptime() const { return uint32(m_gameTime - m_startTime); }
+        /// World diff time (in ms), showed in .s info, for lag detect...
+        uint32 GetDiffTime() const { return world_diff_time; }
         /// Next daily quests reset time
         time_t GetNextDailyQuestsResetTime() const { return m_NextDailyQuestReset; }
         time_t GetNextWeeklyQuestsResetTime() const { return m_NextWeeklyQuestReset; }
@@ -533,6 +568,8 @@ class World
         static uint8 GetExitCode() { return m_ExitCode; }
         static void StopNow(uint8 exitcode) { m_stopEvent = true; m_ExitCode = exitcode; }
         static bool IsStopped() { return m_stopEvent; }
+        uint32 GetShutdownTimer() const { return m_ShutdownTimer; };
+        uint32 GetShutdownMask() const { return m_ShutdownMask; };
 
         void Update(uint32 diff);
 
@@ -600,6 +637,8 @@ class World
         //used Script version
         void SetScriptsVersion(char const* version) { m_ScriptsVersion = version ? version : "unknown scripting library"; }
         char const* GetScriptsVersion() { return m_ScriptsVersion.c_str(); }
+        
+        ACE_Thread_Mutex m_spellUpdateLock;
 
     protected:
         void _UpdateGameTime();
@@ -609,6 +648,7 @@ class World
         void InitDailyQuestResetTime();
         void InitWeeklyQuestResetTime();
         void ResetDailyQuests();
+        void ResetBGDaily();
         void ResetWeeklyQuests();
     private:
         void setConfig(eConfigUInt32Values index, char const* fieldname, uint32 defvalue);
@@ -641,6 +681,7 @@ class World
         IntervalTimer m_timers[WUPDATE_COUNT];
         uint32 mail_timer;
         uint32 mail_timer_expires;
+        uint32 world_diff_time;
 
         typedef UNORDERED_MAP<uint32, Weather*> WeatherMap;
         WeatherMap m_weathers;

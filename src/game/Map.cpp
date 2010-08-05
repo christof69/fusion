@@ -357,6 +357,13 @@ void Map::LoadGrid(const Cell& cell, bool no_unload)
 
 bool Map::Add(Player *player)
 {
+    //TEAMBG - this must NOT happen!
+    if(!IsBattleGround() && player->isInTeamBG())
+    {
+        player->SetTeamBG(false, 0);
+        sLog.outError("Something is wrong, player %u is not added to bg map but has TeamBG data!", player->GetGUID());
+    }
+
     player->GetMapRef().link(this, player);
     player->SetMap(this);
 
@@ -374,6 +381,18 @@ bool Map::Add(Player *player)
     UpdateObjectVisibility(player,cell,p);
 
     AddNotifier(player,cell,p);
+
+    //Factioned maps
+    if(sMapMgr.isFactioned(GetId()) && sWorld.getConfig(CONFIG_BOOL_FACTIONED_MAP_ENABLED))
+    {
+        player->setFaction(sWorld.getConfig(CONFIG_UINT32_FACTIONED_MAP_FACTION));
+        player->SetFakeTeam(sWorld.getConfig(CONFIG_UINT32_FACTIONED_MAP_TEAM));
+    }
+    else if (player->getFakeTeam() != 0 && !sMapMgr.isFactioned(GetId()) && !player->isInTeamBG())
+    {
+        player->SetFakeTeam(0);
+        player->setFactionForRace(player->getRace());
+    }
     return true;
 }
 
@@ -461,7 +480,7 @@ void Map::MessageBroadcast(WorldObject *obj, WorldPacket *msg)
     cell.Visit(p, message, *this, *obj, GetVisibilityDistance());
 }
 
-void Map::MessageDistBroadcast(Player *player, WorldPacket *msg, float dist, bool to_self, bool own_team_only)
+void Map::MessageDistBroadcast(Player *player, WorldPacket *msg, float dist, bool to_self, bool own_team_only, bool enemyTeamOnly)
 {
     CellPair p = MaNGOS::ComputeCellPair(player->GetPositionX(), player->GetPositionY());
 
@@ -478,7 +497,7 @@ void Map::MessageDistBroadcast(Player *player, WorldPacket *msg, float dist, boo
     if( !loaded(GridPair(cell.data.Part.grid_x, cell.data.Part.grid_y)) )
         return;
 
-    MaNGOS::MessageDistDeliverer post_man(*player, msg, dist, to_self, own_team_only);
+    MaNGOS::MessageDistDeliverer post_man(*player, msg, dist, to_self, own_team_only, enemyTeamOnly);
     TypeContainerVisitor<MaNGOS::MessageDistDeliverer , WorldTypeMapContainer > message(post_man);
     cell.Visit(p, message, *this, *player, dist);
 }
@@ -551,9 +570,9 @@ void Map::Update(const uint32 &t_diff)
         CellArea area = Cell::CalculateCellArea(*plr, GetVisibilityDistance());
         area.ResizeBorders(begin_cell, end_cell);
 
-        for(uint32 x = begin_cell.x_coord; x <= end_cell.x_coord; ++x)
+        for(uint32 x = begin_cell.x_coord; x < end_cell.x_coord; ++x)
         {
-            for(uint32 y = begin_cell.y_coord; y <= end_cell.y_coord; ++y)
+            for(uint32 y = begin_cell.y_coord; y < end_cell.y_coord; ++y)
             {
                 // marked cells are those that have been visited
                 // don't visit the same cell twice
@@ -599,9 +618,9 @@ void Map::Update(const uint32 &t_diff)
             begin_cell << 1; begin_cell -= 1;               // upper left
             end_cell >> 1; end_cell += 1;                   // lower right
 
-            for(uint32 x = begin_cell.x_coord; x <= end_cell.x_coord; ++x)
+            for(uint32 x = begin_cell.x_coord; x < end_cell.x_coord; ++x)
             {
-                for(uint32 y = begin_cell.y_coord; y <= end_cell.y_coord; ++y)
+                for(uint32 y = begin_cell.y_coord; y < end_cell.y_coord; ++y)
                 {
                     // marked cells are those that have been visited
                     // don't visit the same cell twice
@@ -638,7 +657,7 @@ void Map::Update(const uint32 &t_diff)
         }
     }
 
-    ///- Process necessary scripts
+	///- Process necessary scripts
     if (!m_scriptSchedule.empty())
         ScriptsProcess();
 }
@@ -1082,11 +1101,58 @@ inline bool IsOutdoorWMO(uint32 mogpFlags, int32 adtId, int32 rootId, int32 grou
 
     if(wmoEntry && atEntry)
     {
+<<<<<<< HEAD:src/game/Map.cpp
         if(atEntry->flags & AREA_FLAG_OUTSIDE)
             return true;
         if(atEntry->flags & AREA_FLAG_INSIDE)
             return false;
     }
+=======
+        case 1146:                                          // Blade's Edge Mountains
+        case 1409:                                          // Forge Camp: Wrath (Blade's Edge Mountains)
+            if (x > 3025.0f && x < 3207.0f && y > 6987.0f && y < 7165.0f && z < 183.0f)
+                areaflag = 1404;                            // Blackwing Coven (Blade's Edge Mountains)
+            break;
+        // Acherus: The Ebon Hold (Plaguelands: The Scarlet Enclave)
+        case 1984:                                          // Plaguelands: The Scarlet Enclave
+        case 2076:                                          // Death's Breach (Plaguelands: The Scarlet Enclave)
+        case 2745:                                          // The Noxious Pass (Plaguelands: The Scarlet Enclave)
+            if(z > 350.0f) areaflag = 2048; break;
+        // Acherus: The Ebon Hold (Eastern Plaguelands)
+        case 856:                                           // The Noxious Glade (Eastern Plaguelands)
+        case 2456:                                          // Death's Breach (Eastern Plaguelands)
+            if(z > 350.0f) areaflag = 1950; break;
+        // Winterfin Caverns
+        case 1652:                                          // Coldarra
+        case 1653:                                          // The Westrift
+        case 1661:                                          // Winterfin Village
+            if (x > 3823.0f && x < 4141.5f && y > 6247.0f && y < 64890.0f && z < 42.5f)
+                areaflag = 1723;
+            break;
+        // Moonrest Gardens
+        case 1787:
+            if (x > 3315.3f && x < 3361.6f && y > 2469.4f && y < 2565.8f && z > 197.0f)
+                areaflag = 1786;                            // Surge Needle (cords not entirely correct, will need round circle if this is really needed(see spell 47097 eff 77))
+            break;
+        // Dalaran
+        case 2492:                                          // Forlorn Woods (Crystalsong Forest)
+        case 2371:                                          // Valley of Echoes (Icecrown Glacier)
+            if (x > 5568.0f && x < 6116.0f && y > 282.0f && y < 982.0f && z > 563.0f)
+            {
+                // Krasus' Landing (Dalaran), fast check
+                if (x > 5758.77f && x < 5869.03f && y < 555.75f)
+                {
+                    // Krasus' Landing (Dalaran), with open east side
+                    if (y < 449.33f || 
+                       (x-5813.90f)*(x-5813.90f)+(y-449.33f)*(y-449.33f) < 1864.0f ||
+                       (x-5824.10f)*(x-5824.10f)+(y-532.27f)*(y-532.27f) < 600.00f ||
+                       (x-5825.84f)*(x-5825.84f)+(y-493.00f)*(y-493.00f) < 462.00f)
+                    {
+                        areaflag = 2531;                    // Note: also 2633, possible one flight allowed and other not allowed case
+                        break;
+                    }
+                }
+>>>>>>> vehicule:src/game/Map.cpp
 
     outdoor = mogpFlags&0x8;
 
@@ -1645,7 +1711,7 @@ InstanceMap::~InstanceMap()
 void InstanceMap::InitVisibilityDistance()
 {
     //init visibility distance for instances
-    m_VisibleDistance = World::GetMaxVisibleDistanceInInstances();
+    m_VisibleDistance = sWorld.GetMaxVisibleDistanceInInstances();
 }
 
 /*
@@ -1671,7 +1737,7 @@ bool InstanceMap::CanEnter(Player *player)
 
     // cannot enter while players in the instance are in combat
     Group *pGroup = player->GetGroup();
-    if(pGroup && pGroup->InCombatToInstance(GetInstanceId()) && player->isAlive() && player->GetMapId() != GetId())
+    if(pGroup && pGroup->InCombatToInstance(GetInstanceId(), true) && player->GetMapId() != GetId())
     {
         player->SendTransferAborted(GetId(), TRANSFER_ABORT_ZONE_IN_COMBAT);
         return false;
@@ -1761,7 +1827,8 @@ bool InstanceMap::Add(Player *player)
                                 sLog.outError("GroupBind save players: %d, group count: %d", groupBind->save->GetPlayerCount(), groupBind->save->GetGroupCount());
                             else
                                 sLog.outError("GroupBind save NULL");
-                            ASSERT(false);
+                            player->SendTransferAborted(GetId(), TRANSFER_ABORT_MAP_NOT_ALLOWED);
+                            return false;
                         }
                         // if the group/leader is permanently bound to the instance
                         // players also become permanently bound when they enter
@@ -2952,19 +3019,16 @@ WorldObject* Map::GetWorldObject(ObjectGuid guid)
 void Map::SendObjectUpdates()
 {
     UpdateDataMapType update_players;
+    for(std::set<Object*>::const_iterator it = i_objectsToClientUpdate.begin();it!= i_objectsToClientUpdate.end();++it)
+        (*it)->BuildUpdateData(update_players);
 
-    while(!i_objectsToClientUpdate.empty())
-    {
-        Object* obj = *i_objectsToClientUpdate.begin();
-        i_objectsToClientUpdate.erase(i_objectsToClientUpdate.begin());
-        obj->BuildUpdateData(update_players);
-    }
+    i_objectsToClientUpdate.clear();
 
     WorldPacket packet;                                     // here we allocate a std::vector with a size of 0x10000
     for(UpdateDataMapType::iterator iter = update_players.begin(); iter != update_players.end(); ++iter)
     {
-        iter->second.BuildPacket(&packet);
-        iter->first->GetSession()->SendPacket(&packet);
+        if (iter->second.BuildPacket(&packet))
+            iter->first->GetSession()->SendPacket(&packet);
         packet.clear();                                     // clean the string
     }
 }
@@ -2986,4 +3050,27 @@ uint32 Map::GenerateLocalLowGuid(HighGuid guidhigh)
 
     ASSERT(0);
     return 0;
+}
+
+
+bool Map::IsNextZcoordOK(float x, float y, float oldZ, float maxDiff) const
+{
+    // The fastest way to get an accurate result 90% of the time.
+    // Better result can be obtained like 99% accuracy with a ray light, but the cost is too high and the code is too long.
+    maxDiff = maxDiff >= 100.0f ? 10.0f : sqrtf(maxDiff);
+    bool useVmaps = false;
+    if( GetHeight(x, y, oldZ+2.0f, false) <  GetHeight(x, y, oldZ+2.0f, true) ) // check use of vmaps
+        useVmaps = true;
+
+    float newZ = GetHeight(x, y, oldZ+2.0f, useVmaps);
+
+    if (fabs(newZ-oldZ) > maxDiff)                              // bad...
+    {
+        useVmaps = !useVmaps;                                     // try change vmap use
+        newZ = GetHeight(x, y, oldZ+2.0f, useVmaps);
+
+        if (fabs(newZ-oldZ) > maxDiff)
+            return false;
+    }
+    return true;
 }

@@ -57,6 +57,9 @@ GameObject::GameObject() : WorldObject()
 
     m_DBTableGuid = 0;
     m_rotation = 0;
+
+    m_groupLootTimer = 0;
+    m_groupLootId = 0;
 }
 
 GameObject::~GameObject()
@@ -157,7 +160,7 @@ bool GameObject::Create(uint32 guidlow, uint32 name_id, Map *map, uint32 phaseMa
     return true;
 }
 
-void GameObject::Update(uint32 /*p_time*/)
+void GameObject::Update(uint32 p_time)
 {
     if (GetObjectGuid().IsMOTransport())
     {
@@ -273,8 +276,13 @@ void GameObject::Update(uint32 /*p_time*/)
                     bool IsBattleGroundTrap = false;
                     //FIXME: this is activation radius (in different casting radius that must be selected from spell data)
                     //TODO: move activated state code (cast itself) to GO_ACTIVATED, in this place only check activating and set state
+<<<<<<< HEAD:src/game/GameObject.cpp
                     float radius = float(goInfo->trap.radius);
                     if (!radius)
+=======
+                    float radius = float(goInfo->trap.radius)/2; // in database is used diameter value instead of radius value
+                    if(!radius)
+>>>>>>> vehicule:src/game/GameObject.cpp
                     {
                         if (goInfo->trap.cooldown != 3)     // cast in other case (at some triggering/linked go/etc explicit call)
                             return;
@@ -362,6 +370,22 @@ void GameObject::Update(uint32 /*p_time*/)
                         m_cooldownTime = 0;
                     }
                     break;
+                case GAMEOBJECT_TYPE_CHEST:
+                    if (m_groupLootTimer && m_groupLootId)
+                    {
+                        if(p_time <= m_groupLootTimer)
+                        {
+                            m_groupLootTimer -= p_time;
+                        }
+                        else
+                        {
+                            if (Group* group = sObjectMgr.GetGroupById(m_groupLootId))
+                                group->EndRoll();
+                            m_groupLootTimer = 0;
+                            m_groupLootId = 0;
+                        }
+                    }
+                    break;
                 default:
                     break;
             }
@@ -442,6 +466,9 @@ void GameObject::Refresh()
     // not refresh despawned not casted GO (despawned casted GO destroyed in all cases anyway)
     if(m_respawnTime > 0 && m_spawnedByDefault)
         return;
+
+    m_groupLootTimer = 0;
+    m_groupLootId = 0;
 
     if(isSpawned())
         GetMap()->Add(this);
@@ -694,12 +721,18 @@ bool GameObject::isVisibleForInState(Player const* u, WorldObject const* viewPoi
             return false;
 
         // special invisibility cases
-        /* TODO: implement trap stealth, take look at spell 2836
-        if(GetGOInfo()->type == GAMEOBJECT_TYPE_TRAP && GetGOInfo()->trap.stealthed && u->IsHostileTo(GetOwner()))
+        // TODO: implement trap stealth, take look at spell 2836
+        if(GetOwner() && GetOwner()->IsInWorld() && GetGOInfo()->type == GAMEOBJECT_TYPE_TRAP && GetGOInfo()->trap.stealthed && u->IsHostileTo(GetOwner()))
         {
-            if(check stuff here)
+            if(u->GetGUID() == GetOwner()->GetGUID() || u->HasAura(2836))
+                return true;
+
+            if(m_lootState == GO_READY)
                 return false;
-        }*/
+
+            return true;
+
+        }
     }
 
     // check distance
@@ -1516,6 +1549,7 @@ bool GameObject::IsFriendlyTo(Unit const* unit) const
     return tester_faction->IsFriendlyTo(*target_faction);
 }
 
+<<<<<<< HEAD:src/game/GameObject.cpp
 float GameObject::GetObjectBoundingRadius() const
 {
     //FIXME:
@@ -1526,3 +1560,38 @@ float GameObject::GetObjectBoundingRadius() const
 
     return DEFAULT_WORLD_OBJECT_SIZE;
 }
+=======
+void GameObject::DealSiegeDamage(uint32 damage)
+{
+    if (!GetGOInfo()->destructibleBuilding.intactNumHits)
+        return;
+
+    if (m_actualHealth > damage)
+        m_actualHealth -= damage;
+    else
+        m_actualHealth = 0;
+
+    if (HasFlag(GAMEOBJECT_FLAGS, GO_FLAG_DAMAGED)) // from damaged to destroyed
+    {
+        if(!GetGOInfo()->destructibleBuilding.intactNumHits)
+        {
+            RemoveFlag(GAMEOBJECT_FLAGS, GO_FLAG_DAMAGED);
+            SetFlag(GAMEOBJECT_FLAGS, GO_FLAG_DESTROYED);
+            SetUInt32Value(GAMEOBJECT_DISPLAYID, GetGOInfo()->destructibleBuilding.destroyedDisplayId);
+        }
+    }
+    else // from intact to damaged
+    {
+        if (m_actualHealth <= GetGOInfo()->destructibleBuilding.damagedNumHits)
+        {
+            if (!GetGOInfo()->destructibleBuilding.destroyedDisplayId)
+                m_actualHealth = 0;
+            else if (!m_actualHealth)
+               m_actualHealth = 1;
+
+            SetFlag(GAMEOBJECT_FLAGS, GO_FLAG_DAMAGED);
+            SetUInt32Value(GAMEOBJECT_DISPLAYID, GetGOInfo()->destructibleBuilding.damagedDisplayId);
+        }
+    }
+}
+>>>>>>> vehicule:src/game/GameObject.cpp

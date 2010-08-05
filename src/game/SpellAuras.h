@@ -229,6 +229,8 @@ class MANGOS_DLL_SPEC Aura
         void HandleModTaunt(bool Apply, bool Real);
         void HandleFeignDeath(bool Apply, bool Real);
         void HandleAuraModDisarm(bool Apply, bool Real);
+        void HandleAuraModDisarmOffhand(bool Apply, bool Real);
+        void HandleAuraModDisarmRanged(bool Apply, bool Real);
         void HandleAuraModStalked(bool Apply, bool Real);
         void HandleAuraWaterWalk(bool Apply, bool Real);
         void HandleAuraFeatherFall(bool Apply, bool Real);
@@ -357,14 +359,30 @@ class MANGOS_DLL_SPEC Aura
         void HandleAuraIncreaseBaseHealthPercent(bool Apply, bool Real);
         void HandleNoReagentUseAura(bool Apply, bool Real);
         void HandlePhase(bool Apply, bool Real);
+        void HandleIgnoreUnitState(bool Apply, bool Real);
         void HandleModTargetArmorPct(bool Apply, bool Real);
         void HandleAuraModAllCritChance(bool Apply, bool Real);
         void HandleAllowOnlyAbility(bool Apply, bool Real);
+<<<<<<< HEAD:src/game/SpellAuras.h
+=======
+        void HandleAuraInitializeImages(bool Apply, bool Real);
+        void HandleAuraCloneCaster(bool Apply, bool Real);
+>>>>>>> vehicule:src/game/SpellAuras.h
         void HandleAuraOpenStable(bool apply, bool Real);
 
         virtual ~Aura();
 
         void SetModifier(AuraType t, int32 a, uint32 pt, int32 miscValue);
+
+// DEVELOPER CODE START
+        void SetDeactivatedModifier(AuraType t, int32 a, uint32 pt, int32 miscValue);
+        void SetDeactivity(bool deactivate);
+        void DeactivateAura(bool apply);
+        Modifier*       GetDeactivatedModifier()       { return &m_deactivatedModifier; }
+        Modifier const* GetDeactivatedModifier() const { return &m_deactivatedModifier; }
+        bool IsActive() { return !m_deactivated; }
+// DEVELOPER CODE END
+
         Modifier*       GetModifier()       { return &m_modifier; }
         Modifier const* GetModifier() const { return &m_modifier; }
         int32 GetMiscValue() const { return m_spellAuraHolder->GetSpellProto()->EffectMiscValue[m_effIndex]; }
@@ -379,9 +397,14 @@ class MANGOS_DLL_SPEC Aura
 
         SpellEffectIndex GetEffIndex() const{ return m_effIndex; }
         int32 GetBasePoints() const { return m_currentBasePoints; }
+        int32 GetModMisc() const { return m_modifier.m_miscvalue;}
 
         int32 GetAuraMaxDuration() const { return m_maxduration; }
+
         void SetAuraMaxDuration(int32 duration);
+        int32 GetAuraOrigDuration() const { return m_origDuration; }
+        void SetAuraOrigDuration(int32 duration) { m_origDuration = duration; }
+
         int32 GetAuraDuration() const { return m_duration; }
         void SetAuraDuration(int32 duration) { m_duration = duration; }
         time_t GetAuraApplyTime() const { return m_applyTime; }
@@ -398,6 +421,50 @@ class MANGOS_DLL_SPEC Aura
                 m_periodicTick = maxticks - m_duration / m_modifier.periodictime;
         }
 
+<<<<<<< HEAD:src/game/SpellAuras.h
+=======
+        uint8 GetAuraSlot() const { return m_auraSlot; }
+        void SetAuraSlot(uint8 slot) { m_auraSlot = slot; }
+        uint8 GetAuraFlags() const { return m_auraFlags; }
+        void SetAuraFlags(uint8 flags) { m_auraFlags = flags; }
+        uint8 GetAuraLevel() const { return m_auraLevel; }
+        void SetAuraLevel(uint8 level) { m_auraLevel = level; }
+        uint8 GetAuraCharges() const { return m_procCharges; }
+        void SetAuraCharges(uint8 charges)
+        {
+            if (m_procCharges == charges)
+                return;
+            m_procCharges = charges;
+            SendAuraUpdate(false);
+        }
+        bool DropAuraCharge()                               // return true if last charge dropped
+        {
+            if (m_procCharges == 0)
+                return false;
+
+            // exist spells that have maxStack > 1 and m_procCharges > 0 (==1 in fact)
+            // all like stacks have 1 value in one from this fields
+            // so return true for allow remove one aura from stacks as expired
+            if (GetStackAmount() > 1)
+                return true;
+
+            m_procCharges--;
+            SendAuraUpdate(false);
+            return m_procCharges == 0;
+        }
+
+        void UnregisterSingleCastAura();
+
+        void SetAura(bool remove) { m_target->SetVisibleAura(m_auraSlot, remove ? 0 : GetId()); }
+        void SendAuraUpdate(bool remove);
+        void SendFakeAuraUpdate(uint32 auraId, bool remove);
+
+        uint8 GetStackAmount() {return m_stackAmount;}
+        void SetStackAmount(uint8 num);
+        bool modStackAmount(int32 num); // return true if last charge dropped
+        void RefreshAura();
+
+>>>>>>> vehicule:src/game/SpellAuras.h
         bool IsPositive() { return m_positive; }
         bool IsPersistent() const { return m_isPersistent; }
         bool IsAreaAura() const { return m_isAreaAura; }
@@ -426,12 +493,21 @@ class MANGOS_DLL_SPEC Aura
 
         // add/remove SPELL_AURA_MOD_SHAPESHIFT (36) linked auras
         void HandleShapeshiftBoosts(bool apply);
+<<<<<<< HEAD:src/game/SpellAuras.h
+=======
+        void HandleSpellSpecificBoosts(bool apply, bool last_stack);
+
+        // Allow Apply Aura Handler to modify and access m_AuraDRGroup
+        void setDiminishGroup(DiminishingGroup group) { m_AuraDRGroup = group; }
+        DiminishingGroup getDiminishGroup() const { return m_AuraDRGroup; }
+>>>>>>> vehicule:src/game/SpellAuras.h
 
         void TriggerSpell();
         void TriggerSpellWithValue();
 
         uint32 const *getAuraSpellClassMask() const { return  m_spellAuraHolder->GetSpellProto()->GetEffectSpellClassMask(m_effIndex); }
         bool isAffectedOnSpell(SpellEntry const *spell) const;
+<<<<<<< HEAD:src/game/SpellAuras.h
         bool CanProcFrom(SpellEntry const *spell, uint32 EventProcEx, uint32 procEx, bool active) const;
 
         //SpellAuraHolder const* GetHolder() const { return m_spellHolder; }
@@ -439,6 +515,10 @@ class MANGOS_DLL_SPEC Aura
         SpellAuraHolder* const GetHolder() const { return m_spellAuraHolder; }
 
         bool IsLastAuraOnHolder();
+=======
+        bool isWeaponBuffCoexistableWith(Aura* ref);
+        void ApplyHasteToPeriodic();
+>>>>>>> vehicule:src/game/SpellAuras.h
     protected:
         Aura(SpellEntry const* spellproto, SpellEffectIndex eff, int32 *currentBasePoints, SpellAuraHolder *holder, Unit *target, Unit *caster = NULL, Item* castItem = NULL);
 
@@ -453,16 +533,23 @@ class MANGOS_DLL_SPEC Aura
         void ReapplyAffectedPassiveAuras();
 
         Modifier m_modifier;
+
+// DEVELOPER CODE START
+        Modifier m_deactivatedModifier;
+        bool m_deactivated;
+// DEVELOPER CODE END
+
         SpellModifier *m_spellmod;
 
         time_t m_applyTime;
 
-        int32 m_currentBasePoints;                          // cache SpellEntry::CalculateSimpleValue and use for set custom base points
+        int32 m_currentBasePoints;                          // cache SpellEntry::EffectBasePoints and use for set custom base points
         int32 m_maxduration;                                // Max aura duration
         int32 m_duration;                                   // Current time
         int32 m_timeCla;                                    // Timer for power per sec calcultion
         int32 m_periodicTimer;                              // Timer for periodic auras
         uint32 m_periodicTick;                              // Tick count pass (including current if use in tick code) from aura apply, used for some tick count dependent aura effects
+        uint32 m_origDuration;                              // Duration before applying haste, etc...
 
         AuraRemoveMode m_removeMode:8;                      // Store info for know remove aura reason
 

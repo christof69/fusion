@@ -74,6 +74,9 @@ bool ChatHandler::HandleReloadAllCommand(const char*)
     HandleReloadReservedNameCommand("");
     HandleReloadMangosStringCommand("");
     HandleReloadGameTeleCommand("");
+
+    HandleReloadVehicleDataCommand("");
+    HandleReloadVehicleSeatDataCommand("");
     return true;
 }
 
@@ -162,6 +165,7 @@ bool ChatHandler::HandleReloadAllSpellCommand(const char*)
     HandleReloadSpellElixirCommand("a");
     HandleReloadSpellLearnSpellCommand("a");
     HandleReloadSpellProcEventCommand("a");
+    HandleReloadSpellStackCommand("a"); 
     HandleReloadSpellBonusesCommand("a");
     HandleReloadSpellProcItemEnchantCommand("a");
     HandleReloadSpellScriptTargetCommand("a");
@@ -591,7 +595,15 @@ bool ChatHandler::HandleReloadSpellProcEventCommand(const char*)
     SendGlobalSysMessage("DB table `spell_proc_event` (spell proc trigger requirements) reloaded.");
     return true;
 }
-
+bool ChatHandler::HandleReloadSpellStackCommand(const char*) 
+{ 
+    sLog.outString( "Re-Loading Spell stacking conditions..." ); 
+    sSpellMgr.LoadSpellStack(); 
+    sSpellMgr.LoadSpellStackGroup(); 
+    SendGlobalSysMessage("DB table `spell_stack_data` and `spell_stack_group_data` reloaded."); 
+    return true; 
+} 
+ 
 bool ChatHandler::HandleReloadSpellBonusesCommand(const char*)
 {
     sLog.outString( "Re-Loading Spell Bonus Data..." );
@@ -904,6 +916,22 @@ bool ChatHandler::HandleReloadMailLevelRewardCommand(const char* /*arg*/)
     sLog.outString( "Re-Loading Player level dependent mail rewards..." );
     sObjectMgr.LoadMailLevelRewards();
     SendGlobalSysMessage("DB table `mail_level_reward` reloaded.");
+    return true;
+}
+
+bool ChatHandler::HandleReloadVehicleDataCommand(const char*)
+{
+    sLog.outString( "Re-Loading `vehicle_data` Table!" );
+    sObjectMgr.LoadVehicleData();
+    SendGlobalSysMessage("DB table `vehicle_data` reloaded.");
+    return true;
+}
+
+bool ChatHandler::HandleReloadVehicleSeatDataCommand(const char*)
+{
+    sLog.outString( "Re-Loading `vehicle_seat_data` Table!" );
+    sObjectMgr.LoadVehicleSeatData();
+    SendGlobalSysMessage("DB table `vehicle_seat_data` reloaded.");
     return true;
 }
 
@@ -3528,7 +3556,7 @@ bool ChatHandler::HandleDamageCommand(const char * args)
         damage -= absorb + resist;
 
         m_session->GetPlayer()->DealDamageMods(target,damage,&absorb);
-        m_session->GetPlayer()->DealDamage(target, damage, NULL, DIRECT_DAMAGE, schoolmask, NULL, false);
+        m_session->GetPlayer()->DealDamage(target, damage, NULL, DIRECT_DAMAGE, schoolmask, NULL, false, absorb);
         m_session->GetPlayer()->SendAttackStateUpdate (HITINFO_NORMALSWING2, target, 1, schoolmask, damage, absorb, resist, VICTIMSTATE_NORMAL, 0);
         return true;
     }
@@ -4571,11 +4599,11 @@ bool ChatHandler::HandleResetSpellsCommand(const char * args)
         if(!m_session || m_session->GetPlayer()!=target)
             PSendSysMessage(LANG_RESET_SPELLS_ONLINE,GetNameLink(target).c_str());
     }
-    else
+    /*else
     {
         CharacterDatabase.PExecute("UPDATE characters SET at_login = at_login | '%u' WHERE guid = '%u'",uint32(AT_LOGIN_RESET_SPELLS), GUID_LOPART(target_guid));
         PSendSysMessage(LANG_RESET_SPELLS_OFFLINE,target_name.c_str());
-    }
+    } */
 
     return true;
 }

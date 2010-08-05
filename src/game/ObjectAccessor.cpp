@@ -42,6 +42,7 @@
 #define CLASS_LOCK MaNGOS::ClassLevelLockable<ObjectAccessor, ACE_Thread_Mutex>
 INSTANTIATE_SINGLETON_2(ObjectAccessor, CLASS_LOCK);
 INSTANTIATE_CLASS_MUTEX(ObjectAccessor, ACE_Thread_Mutex);
+ACE_Thread_Mutex ObjectAccessor::m_Lock;
 
 ObjectAccessor::ObjectAccessor() {}
 ObjectAccessor::~ObjectAccessor()
@@ -53,6 +54,21 @@ ObjectAccessor::~ObjectAccessor()
     }
 }
 
+Creature*
+ObjectAccessor::GetCreatureOrPetOrVehicle(WorldObject const &u, ObjectGuid guid)
+{
+    if(guid.IsPlayer() || !u.IsInWorld())
+        return NULL;
+
+    if(guid.IsPet())
+        return u.GetMap()->GetPet(guid);
+
+    if(guid.IsVehicle())
+        return u.GetMap()->GetVehicle(guid);
+
+    return u.GetMap()->GetCreature(guid);
+}
+
 Unit*
 ObjectAccessor::GetUnit(WorldObject const &u, ObjectGuid guid)
 {
@@ -62,10 +78,7 @@ ObjectAccessor::GetUnit(WorldObject const &u, ObjectGuid guid)
     if(guid.IsPlayer())
         return FindPlayer(guid);
 
-    if (!u.IsInWorld())
-        return NULL;
-
-    return u.GetMap()->GetCreatureOrPetOrVehicle(guid);
+    return GetCreatureOrPetOrVehicle(u, guid);
 }
 
 Corpse* ObjectAccessor::GetCorpseInMap(ObjectGuid guid, uint32 mapid)
@@ -92,6 +105,7 @@ ObjectAccessor::FindPlayer(ObjectGuid guid)
 Player*
 ObjectAccessor::FindPlayerByName(const char *name)
 {
+    //TODO: Player Guard
     HashMapHolder<Player>::ReadGuard g(HashMapHolder<Player>::GetLock());
     HashMapHolder<Player>::MapType& m = sObjectAccessor.GetPlayers();
     for(HashMapHolder<Player>::MapType::iterator iter = m.begin(); iter != m.end(); ++iter)
