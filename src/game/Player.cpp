@@ -6326,7 +6326,7 @@ Repfaction2 = tabardFactionID;
 
     if(Rep->repfaction1 && (!Rep->team_dependent || GetTeam()==ALLIANCE))
     {
-        int32 donerep1 = CalculateReputationGain(pVictim->getLevel(), Rep->repvalue1, Repfaction1, false)
+        int32 donerep1 = CalculateReputationGain(pVictim->getLevel(), Rep->repvalue1, Repfaction1, false);
         donerep1 = int32(donerep1*rate);
         FactionEntry const *factionEntry1 = sFactionStore.LookupEntry(Repfaction1);
         uint32 current_reputation_rank1 = GetReputationMgr().GetRank(factionEntry1);
