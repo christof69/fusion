@@ -8149,7 +8149,7 @@ bool SpellAuraHolder::IsNeedVisibleSlot(Unit const* caster) const
     // passive auras (except totem auras) do not get placed in the slots
     return !m_isPassive || totemAura || HasAreaAuraEffect(m_spellProto);
 }
-+void SpellAuraHolder::SendFakeAuraUpdate(uint32 auraId, bool remove)
+void SpellAuraHolder::SendFakeAuraUpdate(uint32 auraId, bool remove)
 {
     WorldPacket data(SMSG_AURA_UPDATE);
     data << m_target->GetPackGUID();
